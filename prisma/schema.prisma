@@ -1,0 +1,45 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Stock {
+  id             Int      @id @default(autoincrement())
+  ticker         String   @unique
+  name           String?
+  sector         String?
+  notes          String?
+  summary        String?
+  lastSummaryAt  DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  files          File[]
+  entries        Entry[]
+}
+
+model File {
+  id           Int    @id @default(autoincrement())
+  stockId      Int
+  stock        Stock  @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  filename     String
+  originalName String
+  fileType     String
+  fileSize     Int
+  description  String?
+  createdAt    DateTime @default(now())
+}
+
+model Entry {
+  id        Int    @id @default(autoincrement())
+  stockId   Int
+  stock     Stock  @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  title     String?
+  content   String
+  tag       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,15 @@
+# secrets
+.env
+
+# dependencies
+node_modules/
+
+# Next.js build output
+.next/
+
+# SQLite database
+prisma/data/
+data/
+
+# TypeScript incremental builds
+*.tsbuildinfo
