@@ -19,6 +19,7 @@ model Stock {
   updatedAt      DateTime @updatedAt
   files          File[]
   entries        Entry[]
+  claims         Claim[]
 }
 
 model File {
@@ -30,6 +31,7 @@ model File {
   fileType     String
   fileSize     Int
   description  String?
+  markdown     String?
   createdAt    DateTime @default(now())
 }
 
@@ -40,6 +42,30 @@ model Entry {
   title     String?
   content   String
   tag       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Tweet {
+  id          Int      @id @default(autoincrement())
+  contentHash String   @unique
+  content     String
+  timestamp   DateTime?
+  claimCount  Int      @default(0)
+  processedAt DateTime @default(now())
+  claims      Claim[]
+}
+
+model Claim {
+  id        Int      @id @default(autoincrement())
+  stockId   Int
+  stock     Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  tweetId   Int?
+  tweet     Tweet?   @relation(fields: [tweetId], references: [id], onDelete: SetNull)
+  text      String
+  source    String?
+  status    String   @default("unverified")
+  evidence  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

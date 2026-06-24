@@ -11,5 +11,8 @@ node_modules/
 prisma/data/
 data/
 
+# Uploaded files (runtime data)
+public/uploads/
+
 # TypeScript incremental builds
 *.tsbuildinfo

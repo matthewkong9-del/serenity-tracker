@@ -6,6 +6,22 @@ export const prisma = globalForPrisma.prisma || new PrismaClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
+export type Stance = "Bullish" | "Bearish" | "Neutral" | null;
+
+export function parseStance(summary: string | null): Stance {
+  if (!summary) return null;
+  const match = summary.match(
+    /\*\*Current Stance\*\*[:\s]*\*?(Bullish|Bearish|Neutral)\*?/i
+  );
+  return match ? (match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()) as Stance : null;
+}
+
+export const STANCE_COLORS: Record<NonNullable<Stance>, string> = {
+  Bullish: "text-green-400 border-green-400/30 bg-green-400/10",
+  Bearish: "text-red-400 border-red-400/30 bg-red-400/10",
+  Neutral: "text-yellow-400 border-yellow-400/30 bg-yellow-400/10",
+};
+
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;

@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { formatBytes, timeAgo } from "@/lib/db";
+import ReactMarkdown from "react-markdown";
+import { formatBytes, timeAgo, parseStance, STANCE_COLORS } from "@/lib/db";
 
 interface StockFile {
   id: number;
@@ -11,6 +12,7 @@ interface StockFile {
   fileType: string;
   fileSize: number;
   description: string | null;
+  markdown: string | null;
   createdAt: string;
 }
 
@@ -19,6 +21,17 @@ interface Entry {
   title: string | null;
   content: string;
   tag: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Claim {
+  id: number;
+  text: string;
+  source: string | null;
+  status: string;
+  evidence: string | null;
+  tweetId: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,9 +46,19 @@ interface Stock {
   lastSummaryAt: string | null;
   files: StockFile[];
   entries: Entry[];
+  claims: Claim[];
 }
 
-type Tab = "files" | "notes" | "all";
+type Tab = "files" | "notes" | "claims" | "all";
+
+const CLAIM_STATUSES = ["unverified", "supported", "refuted", "disputed"] as const;
+
+const CLAIM_COLORS: Record<string, string> = {
+  unverified: "text-yellow-400 border-yellow-400/30 bg-yellow-400/10",
+  supported: "text-green-400 border-green-400/30 bg-green-400/10",
+  refuted: "text-red-400 border-red-400/30 bg-red-400/10",
+  disputed: "text-blue-400 border-blue-400/30 bg-blue-400/10",
+};
 
 export default function StockPage() {
   const params = useParams();
@@ -46,6 +69,11 @@ export default function StockPage() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // URL conversion
+  const [urlInput, setUrlInput] = useState("");
+  const [convertingUrl, setConvertingUrl] = useState(false);
+  const [urlError, setUrlError] = useState("");
 
   // Summary states
   const [summarizing, setSummarizing] = useState(false);
@@ -64,6 +92,10 @@ export default function StockPage() {
   const [editContent, setEditContent] = useState("");
   const [editTag, setEditTag] = useState("");
 
+  // Edit claim
+  const [editingClaimId, setEditingClaimId] = useState<number | null>(null);
+  const [editEvidence, setEditEvidence] = useState("");
+
   const load = useCallback(() => {
     fetch(`/api/stocks/${ticker}`)
       .then((r) => {
@@ -77,10 +109,11 @@ export default function StockPage() {
   useEffect(() => { load(); }, [load]);
 
   // LOGIC: Does the summary need updating?
-  const needsSummary = stock ? 
-    !stock.lastSummaryAt || 
-    stock.files.some(f => new Date(f.createdAt) > new Date(stock.lastSummaryAt!)) || 
-    stock.entries.some(e => new Date(e.createdAt) > new Date(stock.lastSummaryAt!))
+  const needsSummary = stock ?
+    !stock.lastSummaryAt ||
+    stock.files.some(f => new Date(f.createdAt) > new Date(stock.lastSummaryAt!)) ||
+    stock.entries.some(e => new Date(e.createdAt) > new Date(stock.lastSummaryAt!)) ||
+    stock.claims.some(c => new Date(c.createdAt) > new Date(stock.lastSummaryAt!))
     : false;
 
   async function handleSummarize() {
@@ -106,6 +139,38 @@ export default function StockPage() {
       await fetch(`/api/stocks/${ticker}/files`, { method: "POST", body: fd });
     }
     setUploading(false);
+    load();
+  }
+
+  async function handleUrlConvert() {
+    if (!urlInput.trim()) return;
+    setConvertingUrl(true);
+    setUrlError("");
+
+    const res = await fetch("/api/convert-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: urlInput.trim() }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      setUrlError(data.error || "Conversion failed");
+      setConvertingUrl(false);
+      return;
+    }
+
+    const { markdown } = await res.json();
+
+    // Save as a file attached to this stock
+    const fd = new FormData();
+    const name = urlInput.replace(/^https?:\/\//, "").split("/")[0] || "webpage";
+    const blob = new Blob([markdown], { type: "text/markdown" });
+    fd.append("file", blob, `${name}.md`);
+    await fetch(`/api/stocks/${ticker}/files`, { method: "POST", body: fd });
+
+    setUrlInput("");
+    setConvertingUrl(false);
     load();
   }
 
@@ -152,8 +217,35 @@ export default function StockPage() {
     load();
   }
 
+  async function cycleClaimStatus(claim: Claim) {
+    const idx = CLAIM_STATUSES.indexOf(claim.status as any);
+    const next = CLAIM_STATUSES[(idx + 1) % CLAIM_STATUSES.length];
+    await fetch(`/api/stocks/${ticker}/claims/${claim.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: next }),
+    });
+    load();
+  }
+
+  async function saveClaimEvidence(claimId: number) {
+    await fetch(`/api/stocks/${ticker}/claims/${claimId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ evidence: editEvidence }),
+    });
+    setEditingClaimId(null);
+    setEditEvidence("");
+    load();
+  }
+
+  function startEditClaim(claim: Claim) {
+    setEditingClaimId(claim.id);
+    setEditEvidence(claim.evidence || "");
+  }
+
   async function deleteStock() {
-    if (!confirm("Delete this stock and all its files/notes?")) return;
+    if (!confirm("Delete this stock and all its files/notes/claims?")) return;
     await fetch(`/api/stocks/${ticker}`, { method: "DELETE" });
     router.push("/");
   }
@@ -161,6 +253,8 @@ export default function StockPage() {
   if (!stock) {
     return <div className="text-muted text-center py-20">Loading...</div>;
   }
+
+  const existingTags = Array.from(new Set(stock.entries.map((e) => e.tag).filter(Boolean))) as string[];
 
   const isImage = (type: string) => ["jpg", "jpeg", "png", "gif", "webp"].includes(type);
   const isPdf = (type: string) => type === "pdf";
@@ -177,6 +271,14 @@ export default function StockPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold text-fg">${stock.ticker}</h1>
+            {(() => {
+              const stance = parseStance(stock.summary);
+              return stance ? (
+                <span className={`text-xs border rounded-full px-3 py-1 ${STANCE_COLORS[stance]}`}>
+                  {stance}
+                </span>
+              ) : null;
+            })()}
             {stock.sector && (
               <span className="text-xs bg-surface border border-border rounded-full px-3 py-0.5 text-muted">
                 {stock.sector}
@@ -211,8 +313,8 @@ export default function StockPage() {
         {summaryError && <p className="text-red-400 text-sm mb-2">{summaryError}</p>}
 
         {stock.summary ? (
-          <div className="prose prose-invert prose-sm max-w-none text-fg/80 whitespace-pre-wrap">
-            {stock.summary}
+          <div className="prose prose-invert prose-sm max-w-none text-fg/80 [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_strong]:text-fg [&_li]:mb-1">
+            <ReactMarkdown>{stock.summary}</ReactMarkdown>
           </div>
         ) : (
           <p className="text-muted text-sm">
@@ -237,9 +339,9 @@ export default function StockPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border mb-6">
-        {(["all", "files", "notes"] as Tab[]).map((t) => (
+        {(["all", "files", "notes", "claims"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-sm capitalize border-b-2 transition ${tab === t ? "border-accent text-accent" : "border-transparent text-muted hover:text-fg"}`}>
-            {t} {t === "all" ? `(${timeline.length})` : t === "files" ? `(${stock.files.length})` : `(${stock.entries.length})`}
+            {t} {t === "all" ? `(${timeline.length})` : t === "files" ? `(${stock.files.length})` : t === "notes" ? `(${stock.entries.length})` : `(${stock.claims.length})`}
           </button>
         ))}
       </div>
@@ -250,7 +352,30 @@ export default function StockPage() {
           <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files); }} onClick={() => fileRef.current?.click()} className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition mb-6 ${dragOver ? "border-accent bg-accent/5" : "border-border hover:border-muted"}`}>
             <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => handleUpload(e.target.files)} />
             <p className="text-muted text-sm">{uploading ? "Uploading..." : "Drop .md or .txt files here (or click)"}</p>
-            <p className="text-muted/50 text-xs mt-1">For AI memory, Markdown (.md) is ideal</p>
+            <p className="text-muted/50 text-xs mt-1">PDFs, DOCX, images, audio, spreadsheets, HTML — all converted to Markdown automatically</p>
+          </div>
+
+          {/* URL Paste */}
+          <div className="bg-surface border border-border rounded-xl p-4 mb-6">
+            <p className="text-xs text-muted mb-2 uppercase tracking-wide">Paste URL</p>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleUrlConvert()}
+                placeholder="https://example.com/article-or-report"
+                className="flex-1 bg-bg border border-border rounded-lg px-3 py-2 text-sm text-fg placeholder:text-muted/50"
+              />
+              <button
+                onClick={handleUrlConvert}
+                disabled={convertingUrl || !urlInput.trim()}
+                className="bg-accent text-bg px-4 py-2 rounded-lg text-sm font-medium hover:bg-accent/90 transition disabled:opacity-50 whitespace-nowrap"
+              >
+                {convertingUrl ? "Converting..." : "Convert & Save"}
+              </button>
+            </div>
+            {urlError && <p className="text-red-400 text-xs mt-2">{urlError}</p>}
           </div>
 
           {stock.files.length === 0 ? (
@@ -266,6 +391,15 @@ export default function StockPage() {
                           {file.fileType}
                         </span>
                         <a href={`/uploads/${ticker}/${file.filename}`} target="_blank" className="text-fg text-sm font-medium hover:text-accent transition truncate">{file.originalName}</a>
+                        {file.markdown ? (
+                          <span className="text-xs bg-green-400/10 text-green-400 border border-green-400/20 rounded-full px-2 py-0.5" title="LLM-readable — will be included in Run Summary">
+                            AI-ready
+                          </span>
+                        ) : (
+                          <span className="text-xs bg-yellow-400/10 text-yellow-400 border border-yellow-400/20 rounded-full px-2 py-0.5" title="Not converted — will NOT be read by the LLM. Re-upload if it's a PDF, DOCX, image, or other format.">
+                            not indexed
+                          </span>
+                        )}
                       </div>
                       <p className="text-muted text-xs mt-1">{formatBytes(file.fileSize)} · {timeAgo(file.createdAt)}</p>
                       {file.description && <p className="text-fg/70 text-sm mt-2">{file.description}</p>}
@@ -290,7 +424,12 @@ export default function StockPage() {
             <div className="bg-surface border border-border rounded-xl p-5 mb-6 space-y-4">
               <input type="text" placeholder="Title (optional)" value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-fg placeholder:text-muted/50 text-sm" />
               <textarea placeholder="Write your note..." value={noteContent} onChange={(e) => setNoteContent(e.target.value)} rows={5} className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-fg placeholder:text-muted/50 text-sm resize-none" />
-              <input type="text" placeholder="Tag (optional, e.g. thesis, prediction)" value={noteTag} onChange={(e) => setNoteTag(e.target.value)} className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-fg placeholder:text-muted/50 text-sm" />
+              <input type="text" placeholder="Tag (optional, e.g. thesis, prediction)" value={noteTag} onChange={(e) => setNoteTag(e.target.value)} className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-fg placeholder:text-muted/50 text-sm" list="tag-suggestions" />
+              {existingTags.length > 0 && (
+                <datalist id="tag-suggestions">
+                  {existingTags.map((t) => <option key={t} value={t} />)}
+                </datalist>
+              )}
               <div className="flex gap-2">
                 <button onClick={saveNote} disabled={savingNote || !noteContent.trim()} className="bg-accent text-bg px-4 py-2 rounded-lg text-sm font-medium hover:bg-accent/90 transition disabled:opacity-50">{savingNote ? "Saving..." : "Save"}</button>
                 <button onClick={() => { setShowNoteForm(false); setNoteTitle(""); setNoteContent(""); setNoteTag(""); }} className="border border-border text-muted px-4 py-2 rounded-lg text-sm hover:text-fg transition">Cancel</button>
@@ -308,7 +447,12 @@ export default function StockPage() {
                     <div className="space-y-3">
                       <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-fg text-sm" placeholder="Title" />
                       <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={4} className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-fg text-sm resize-none" />
-                      <input type="text" value={editTag} onChange={(e) => setEditTag(e.target.value)} className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-fg text-sm" placeholder="Tag" />
+                      <input type="text" value={editTag} onChange={(e) => setEditTag(e.target.value)} className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-fg text-sm" placeholder="Tag" list="tag-suggestions-edit" />
+                      {existingTags.length > 0 && (
+                        <datalist id="tag-suggestions-edit">
+                          {existingTags.map((t) => <option key={t} value={t} />)}
+                        </datalist>
+                      )}
                       <div className="flex gap-2">
                         <button onClick={() => saveEdit(entry.id)} className="bg-accent text-bg px-3 py-1.5 rounded text-sm font-medium">Save</button>
                         <button onClick={() => setEditingId(null)} className="border border-border text-muted px-3 py-1.5 rounded text-sm">Cancel</button>
@@ -332,6 +476,85 @@ export default function StockPage() {
                       <p className="text-fg/80 text-sm mt-3 whitespace-pre-wrap">{entry.content}</p>
                     </>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Claims */}
+      {tab === "claims" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs text-muted">
+              {stock.claims.filter((c) => c.status === "supported").length} verified ·{" "}
+              {stock.claims.filter((c) => c.status === "refuted").length} refuted ·{" "}
+              {stock.claims.filter((c) => c.status === "unverified").length} unchecked
+            </p>
+          </div>
+
+          {stock.claims.length === 0 ? (
+            <p className="text-muted text-center py-10">
+              No claims yet. Sync tweets to extract claims.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {stock.claims.map((claim) => (
+                <div key={claim.id} className="bg-surface border border-border rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <button
+                      onClick={() => cycleClaimStatus(claim)}
+                      className={`text-xs border rounded-full px-2.5 py-1 whitespace-nowrap mt-0.5 transition hover:opacity-80 ${CLAIM_COLORS[claim.status]}`}
+                      title="Click to cycle: unverified → supported → refuted → disputed"
+                    >
+                      {claim.status}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-fg text-sm">{claim.text}</p>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        {claim.source && (
+                          <span className="text-muted text-xs">{claim.source}</span>
+                        )}
+                        <button
+                          onClick={() => startEditClaim(claim)}
+                          className="text-muted hover:text-fg text-xs transition"
+                        >
+                          {claim.evidence ? "Edit evidence" : "+ Add evidence"}
+                        </button>
+                      </div>
+
+                      {editingClaimId === claim.id ? (
+                        <div className="mt-3 space-y-3">
+                          <textarea
+                            value={editEvidence}
+                            onChange={(e) => setEditEvidence(e.target.value)}
+                            placeholder="Paste links, notes, or data that supports or refutes this claim..."
+                            rows={3}
+                            className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-fg text-sm resize-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => saveClaimEvidence(claim.id)}
+                              className="bg-accent text-bg px-3 py-1.5 rounded text-xs font-medium"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingClaimId(null)}
+                              className="border border-border text-muted px-3 py-1.5 rounded text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : claim.evidence ? (
+                        <p className="text-fg/70 text-xs mt-2 whitespace-pre-wrap bg-bg rounded-lg p-3 border border-border">
+                          {claim.evidence}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

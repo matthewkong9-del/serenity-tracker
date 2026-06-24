@@ -1,0 +1,246 @@
+import { prisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
+
+function hashContent(content: string): string {
+  return createHash("sha256").update(content.trim()).digest("hex").slice(0, 16);
+}
+
+async function extractClaimsFromTweet(
+  content: string,
+  timestamp: string | null,
+  apiKey: string
+): Promise<{
+  tickers: { symbol: string; name?: string; sector?: string }[];
+  claims: { ticker: string; text: string }[];
+}> {
+  const prompt = `You are an investment research assistant. Analyze this tweet/thread from a smart investor named "Serenity" (@aleaboreddit).
+
+Your job: extract structured data for a due diligence system.
+
+1. **Tickers**: Identify EVERY stock ticker or company mentioned, including:
+   - $TICKER format (e.g., $AAPL, $NVDA)
+   - Korean/Japanese tickers (e.g., 093370, 2316 TW)
+   - Company names without $ (e.g., "Foosung", "Wistron", "Delta Electronics")
+   For each, provide: symbol (normalized, no $), name if mentioned, sector if inferrable.
+
+2. **Claims**: Extract specific, FALSIFIABLE claims. A claim must be something that can be verified or refuted with data. Skip:
+   - Opinions ("this stock is great")
+   - Jokes, memes, personal insults
+   - Price predictions without rationale
+   - Vague statements
+
+   Include claims like:
+   - "80% of major players selected LPKF equipment"
+   - "AMD scrambling for CW laser supply"
+   - "China eased InP substrate exports"
+   - "NASDAQ listing actively on their radar"
+   - "WUS owns 11.26% of WUS Kunshan worth $4.42B"
+
+3. **Important**: Only extract claims that Serenity is MAKING or CITING as part of his thesis. Each claim should be one sentence, specific, and checkable.
+
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "tickers": [
+    {"symbol": "LPKF", "name": "LPKF Laser & Electronics", "sector": "Semiconductor Equipment"}
+  ],
+  "claims": [
+    {"ticker": "LPKF", "text": "80% of major global players selected LPKF equipment"}
+  ]
+}
+
+If no tickers or claims found, return empty arrays.
+
+Tweet timestamp: ${timestamp || "unknown"}
+Tweet content:
+${content.slice(0, 8000)}`;
+
+  const response = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+
+  const text = data.choices[0].message.content;
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("No JSON in response");
+  return JSON.parse(jsonMatch[0]);
+}
+
+
+export async function POST(req: NextRequest) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "API key not configured" }, { status: 500 });
+  }
+
+  const { csvUrl } = await req.json();
+  if (!csvUrl) {
+    return NextResponse.json({ error: "csvUrl is required" }, { status: 400 });
+  }
+
+  // Fetch CSV
+  let csvText: string;
+  try {
+    const res = await fetch(csvUrl, { redirect: "follow" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    csvText = await res.text();
+  } catch (e: any) {
+    return NextResponse.json({ error: `Failed to fetch CSV: ${e.message}` }, { status: 400 });
+  }
+
+  // Parse CSV — split on timestamp pattern to find row boundaries.
+  // Google Sheets outputs timestamps with variable-width hours (e.g. "1:43:47" not "01:43:47").
+  const TS = /^(\d{4}-\d{2}-\d{2}\s\d{1,2}:\d{2}:\d{2}),/;
+  const lines = csvText.split("\n");
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const line of lines) {
+    if (TS.test(line) && current) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current += (current ? "\n" : "") + line;
+    }
+  }
+  if (current) chunks.push(current);
+
+  const dataRows: { timestamp: string; content: string }[] = [];
+  for (const chunk of chunks) {
+    const tsMatch = chunk.match(TS);
+    if (!tsMatch) continue;
+    const timestamp = tsMatch[1];
+    if (timestamp.toLowerCase() === "timestamp") continue; // skip header
+
+    // Content is in the 3rd CSV column.
+    // Quoted:   timestamp,Author,"multi,line\ncontent",URL,ID
+    // Unquoted: timestamp,Author,simple content,URL,ID
+    const afterTimestamp = chunk.slice(tsMatch[0].length); // "Author,..."
+    const afterFirstComma = afterTimestamp.slice(afterTimestamp.indexOf(",") + 1); // "...content...",URL,ID
+
+    let content: string;
+    if (afterFirstComma.startsWith('"')) {
+      // Quoted content — find matching close quote
+      const rest = afterFirstComma.slice(1);
+      const lastQuote = rest.lastIndexOf('"');
+      content = lastQuote >= 0
+        ? rest.slice(0, lastQuote).replace(/""/g, '"')
+        : rest.replace(/""/g, '"');
+    } else {
+      // Unquoted content — take everything up to the next comma or end
+      const nextComma = afterFirstComma.indexOf(",");
+      content = nextComma >= 0
+        ? afterFirstComma.slice(0, nextComma)
+        : afterFirstComma;
+    }
+
+    if (content.trim()) {
+      dataRows.push({ timestamp, content });
+    }
+  }
+
+  // Process
+  let newTweets = 0;
+  let skippedTweets = 0;
+  let totalClaims = 0;
+  const newStocks: string[] = [];
+  const errors: { index: number; error: string }[] = [];
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const row = dataRows[i];
+    const hash = hashContent(row.content);
+
+    // Dedup
+    const existing = await prisma.tweet.findUnique({ where: { contentHash: hash } });
+    if (existing) {
+      skippedTweets++;
+      continue;
+    }
+
+    // Save tweet
+    const tweet = await prisma.tweet.create({
+      data: {
+        contentHash: hash,
+        content: row.content,
+        timestamp: row.timestamp ? new Date(row.timestamp) : null,
+      },
+    });
+
+    newTweets++;
+
+    // Extract claims via LLM
+    try {
+      const result = await extractClaimsFromTweet(row.content, row.timestamp, apiKey);
+
+      // Create/find stocks for each ticker
+      for (const t of result.tickers) {
+        const symbol = t.symbol.toUpperCase().trim();
+        if (!symbol || symbol.length > 10) continue;
+
+        const existingStock = await prisma.stock.findUnique({ where: { ticker: symbol } });
+        if (!existingStock) {
+          await prisma.stock.create({
+            data: {
+              ticker: symbol,
+              name: t.name?.trim() || null,
+              sector: t.sector?.trim() || null,
+            },
+          });
+          newStocks.push(symbol);
+        }
+      }
+
+      // Create claims
+      let tweetClaims = 0;
+      for (const c of result.claims) {
+        const symbol = c.ticker.toUpperCase().trim();
+        if (!symbol || symbol.length > 10) continue;
+
+        const stock = await prisma.stock.findUnique({ where: { ticker: symbol } });
+        if (!stock) continue;
+
+        await prisma.claim.create({
+          data: {
+            stockId: stock.id,
+            tweetId: tweet.id,
+            text: c.text,
+            source: row.timestamp
+              ? `Serenity tweet ${new Date(row.timestamp).toLocaleDateString()}`
+              : "Serenity tweet",
+          },
+        });
+        tweetClaims++;
+      }
+
+      if (tweetClaims > 0) {
+        await prisma.tweet.update({
+          where: { id: tweet.id },
+          data: { claimCount: tweetClaims },
+        });
+        totalClaims += tweetClaims;
+      }
+    } catch (e: any) {
+      errors.push({ index: i + 1, error: e.message });
+    }
+  }
+
+  return NextResponse.json({
+    newTweets,
+    skippedTweets,
+    totalClaims,
+    newStocks,
+    errors,
+  });
+}

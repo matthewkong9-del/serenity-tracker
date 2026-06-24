@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-06-24 — Claims Dashboard
+
+### Claims Dashboard Page (`/claims`)
+- Global claims view across all stocks with stats summary bar
+- Status filter tabs: All, Unverified, Supported, Refuted, Disputed (with live counts)
+- Full-text search across claim text, evidence, source, ticker, company name
+- Sort by newest/oldest
+- Inline status cycling and evidence editing (same UX as stock detail page)
+- Source tweet preview embedded in each claim card (expandable)
+- Tweet filter support via `/claims?tweetId=X` query param
+- New API: `GET /api/claims` with filtering by status, search, tweetId, sort
+
+### Tweet-Claim Linking
+- Claim count badges on `/tweets` page are now clickable links → `/claims?tweetId=X`
+
+### Navigation
+- Added "Claims" link in top nav bar
+
+### Fixes
+- Fixed DATABASE_URL path resolution (Prisma resolves relative to prisma/ directory)
+
 ## 2026-06-23 — Initial Build
 
 ### Stock Management

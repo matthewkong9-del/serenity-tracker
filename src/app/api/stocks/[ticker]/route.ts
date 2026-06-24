@@ -10,6 +10,7 @@ export async function GET(
     include: {
       files: { orderBy: { createdAt: "desc" } },
       entries: { orderBy: { createdAt: "desc" } },
+      claims: { orderBy: { createdAt: "desc" } },
     },
   });
 

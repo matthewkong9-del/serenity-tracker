@@ -4,8 +4,14 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET() {
   const stocks = await prisma.stock.findMany({
     orderBy: { updatedAt: "desc" },
-    include: {
-      _count: { select: { files: true, entries: true } },
+    select: {
+      id: true,
+      ticker: true,
+      name: true,
+      sector: true,
+      summary: true,
+      updatedAt: true,
+      _count: { select: { files: true, entries: true, claims: true } },
     },
   });
   return NextResponse.json(stocks);
