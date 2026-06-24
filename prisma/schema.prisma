@@ -47,13 +47,14 @@ model Entry {
 }
 
 model Tweet {
-  id          Int      @id @default(autoincrement())
-  contentHash String   @unique
+  id          Int            @id @default(autoincrement())
+  contentHash String         @unique
   content     String
   timestamp   DateTime?
-  claimCount  Int      @default(0)
-  processedAt DateTime @default(now())
+  claimCount  Int            @default(0)
+  processedAt DateTime       @default(now())
   claims      Claim[]
+  concepts    TweetConcept[]
 }
 
 model Claim {
@@ -68,4 +69,23 @@ model Claim {
   evidence  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Concept {
+  id          Int            @id @default(autoincrement())
+  name        String         @unique
+  description String?
+  category    String?
+  createdAt   DateTime       @default(now())
+  tweets      TweetConcept[]
+}
+
+model TweetConcept {
+  id        Int     @id @default(autoincrement())
+  tweetId   Int
+  conceptId Int
+  tweet     Tweet   @relation(fields: [tweetId], references: [id], onDelete: Cascade)
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@unique([tweetId, conceptId])
 }

@@ -22,6 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/claims" className="text-sm text-muted hover:text-fg transition">
                 Claims
               </a>
+              <a href="/concepts" className="text-sm text-muted hover:text-fg transition">
+                Concepts
+              </a>
             </div>
             <a
               href="/stocks/new"

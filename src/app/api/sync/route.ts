@@ -13,6 +13,7 @@ async function extractClaimsFromTweet(
 ): Promise<{
   tickers: { symbol: string; name?: string; sector?: string }[];
   claims: { ticker: string; text: string }[];
+  concepts: { name: string; description?: string; category?: string }[];
 }> {
   const prompt = `You are an investment research assistant. Analyze this tweet/thread from a smart investor named "Serenity" (@aleaboreddit).
 
@@ -37,7 +38,12 @@ Your job: extract structured data for a due diligence system.
    - "NASDAQ listing actively on their radar"
    - "WUS owns 11.26% of WUS Kunshan worth $4.42B"
 
-3. **Important**: Only extract claims that Serenity is MAKING or CITING as part of his thesis. Each claim should be one sentence, specific, and checkable.
+3. **Concepts**: Extract key technologies, supply chain relationships, investment themes, and other notable concepts. These are NOT stocks — they are the ideas, technologies, and dynamics that connect everything. Include:
+   - Technologies ("Silicon Photonics", "HBM", "CW Laser", "InP Substrates", "Glass substrates")
+   - Supply chain dynamics ("OSAT consolidation", "China export controls", "NVIDIA supply chain")
+   - Investment themes ("optical interconnect", "AI capex cycle", "semiconductor equipment boom")
+   - Notable private companies, products, or events
+   For each concept, provide a short name and 1-sentence description from context. Categorize as: Technology, Supply Chain, Market Theme, Product, or Other.
 
 Return ONLY valid JSON, no markdown, no explanation:
 {
@@ -46,10 +52,13 @@ Return ONLY valid JSON, no markdown, no explanation:
   ],
   "claims": [
     {"ticker": "LPKF", "text": "80% of major global players selected LPKF equipment"}
+  ],
+  "concepts": [
+    {"name": "Silicon Photonics", "description": "Photonic integrated circuit technology for optical interconnects", "category": "Technology"}
   ]
 }
 
-If no tickers or claims found, return empty arrays.
+If no tickers, claims, or concepts found, return empty arrays.
 
 Tweet timestamp: ${timestamp || "unknown"}
 Tweet content:
@@ -230,6 +239,36 @@ export async function POST(req: NextRequest) {
           data: { claimCount: tweetClaims },
         });
         totalClaims += tweetClaims;
+      }
+
+      // Save concepts
+      for (const c of result.concepts || []) {
+        if (!c.name || c.name.length > 100) continue;
+
+        const existing = await prisma.concept.findUnique({ where: { name: c.name } });
+        let concept;
+        if (existing) {
+          concept = existing;
+        } else {
+          concept = await prisma.concept.create({
+            data: {
+              name: c.name,
+              description: c.description?.slice(0, 500) || null,
+              category: c.category?.trim() || null,
+            },
+          });
+        }
+
+        if (concept) {
+          const existingLink = await prisma.tweetConcept.findUnique({
+            where: { tweetId_conceptId: { tweetId: tweet.id, conceptId: concept.id } },
+          });
+          if (!existingLink) {
+            await prisma.tweetConcept.create({
+              data: { tweetId: tweet.id, conceptId: concept.id },
+            });
+          }
+        }
       }
     } catch (e: any) {
       errors.push({ index: i + 1, error: e.message });

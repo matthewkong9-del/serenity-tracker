@@ -2,6 +2,15 @@
 
 ## 2026-06-24 — Claims Dashboard
 
+### Concepts Knowledge Base (`/concepts`)
+- New `Concept` and `TweetConcept` models — auto-extracted from tweets during sync
+- DeepSeek extracts technologies, supply chain dynamics, market themes, and products
+- `/concepts` page: grouped by category, click to expand showing source tweets
+- Category filter tabs with counts (Technology, Supply Chain, Market Theme, Product, etc.)
+- Backfill endpoint (`POST /api/backfill-concepts`) reprocesses existing tweets
+- 201 concepts extracted from 62 tweets across 7 categories
+- New API: `GET /api/concepts` with category filtering
+
 ### Claims Dashboard Page (`/claims`)
 - Global claims view across all stocks with stats summary bar
 - Status filter tabs: All, Unverified, Supported, Refuted, Disputed (with live counts)
