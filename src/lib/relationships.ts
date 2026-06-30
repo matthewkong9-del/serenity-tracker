@@ -224,8 +224,8 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
   await prisma.relationship.createMany({
     data: result.relationships.map((r) => ({
       stockId: stock.id,
-      type: r.type.toLowerCase().trim().slice(0, 50),
-      target: r.target.trim().slice(0, 200),
+      type: (r.type || "other").toLowerCase().trim().slice(0, 50),
+      target: (r.target || "Unknown").trim().slice(0, 200),
       description: r.description?.trim()?.slice(0, 500) || null,
       sources: r.sources?.trim()?.slice(0, 500) || null,
       confidence: ["confirmed", "speculative", "gap"].includes(r.confidence)
@@ -259,8 +259,8 @@ export async function extractContrarianAngles(ticker: string, apiKey: string): P
   await prisma.relationship.createMany({
     data: result.angles.map((a) => ({
       stockId: stock.id,
-      type: a.type.toLowerCase().trim().slice(0, 50),
-      target: a.target.trim().slice(0, 200),
+      type: (a.type || "other").toLowerCase().trim().slice(0, 50),
+      target: (a.target || "Unknown").trim().slice(0, 200),
       description: a.description?.trim()?.slice(0, 500) || null,
       sources: a.sources?.trim()?.slice(0, 500) || null,
       confidence: ["confirmed", "speculative", "gap"].includes(a.confidence)
