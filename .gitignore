@@ -9,7 +9,8 @@ node_modules/
 
 # SQLite database
 prisma/data/
-data/
+data/*
+!data/tracker.db
 
 # Uploaded files (runtime data)
 public/uploads/
