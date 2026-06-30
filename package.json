@@ -11,7 +11,9 @@
     "format:check": "prettier --check 'src/**/*.{ts,tsx,css}'",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npx tsx scripts/check-freshness.ts",
+    "check:quick": "npm run typecheck && npm test"
   },
   "dependencies": {
     "@prisma/client": "^5.16.0",

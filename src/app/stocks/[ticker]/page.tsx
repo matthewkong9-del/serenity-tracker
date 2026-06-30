@@ -1095,7 +1095,8 @@ export default function StockPage() {
 
           {stock.relationships.length === 0 ? (
             <p className="text-muted text-center py-10">
-              No relationship map yet. Click &quot;Map Relationships&quot; to let the AI discover connections.
+              No relationship map yet. Click &quot;Map Relationships&quot; to let the AI discover
+              connections.
             </p>
           ) : (
             (() => {
