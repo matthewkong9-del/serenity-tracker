@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { rankPortfolioAttention } from "@/lib/summarize";
+import { rankPortfolioAttention } from "@/lib/portfolio-ai";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {

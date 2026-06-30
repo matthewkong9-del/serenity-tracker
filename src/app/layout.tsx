@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { NavBadges } from "./NavBadges";
 
 export const metadata: Metadata = {
   title: "Serenity Tracker",
@@ -29,12 +30,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Concepts
               </a>
             </div>
-            <a
-              href="/stocks/new"
-              className="bg-accent text-bg text-sm font-medium px-4 py-1.5 rounded hover:bg-accent/90 transition"
-            >
-              + Add Stock
-            </a>
+            <div className="flex items-center gap-4">
+              <NavBadges />
+              <a
+                href="/stocks/new"
+                className="bg-accent text-bg text-sm font-medium px-4 py-1.5 rounded hover:bg-accent/90 transition"
+              >
+                + Add Stock
+              </a>
+            </div>
           </div>
         </nav>
         <main className="max-w-6xl mx-auto px-4 py-8">

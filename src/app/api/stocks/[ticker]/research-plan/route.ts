@@ -1,4 +1,4 @@
-import { rankClaimsByImportance } from "@/lib/portfolio-ai";
+import { generateResearchPlan } from "@/lib/portfolio-ai";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(
@@ -16,8 +16,14 @@ export async function POST(
   }
 
   try {
-    const priorities = await rankClaimsByImportance(ticker, apiKey);
-    return NextResponse.json({ priorities });
+    const plan = await generateResearchPlan(ticker, apiKey);
+    if (!plan) {
+      return NextResponse.json(
+        { error: "Could not generate research plan" },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json(plan);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

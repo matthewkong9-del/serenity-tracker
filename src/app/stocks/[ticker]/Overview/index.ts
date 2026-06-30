@@ -5,4 +5,5 @@ export { KeyRelationships } from "./KeyRelationships";
 export { ContrarianAngles } from "./ContrarianAngles";
 export { BottomLine } from "./BottomLine";
 export { ThesisDrift } from "./ThesisDrift";
+export { ResearchPlan } from "./ResearchPlan";
 export { RecentActivity } from "./RecentActivity";

@@ -1,4 +1,4 @@
-import { detectThesisDrift } from "@/lib/summarize";
+import { detectThesisDrift } from "@/lib/portfolio-ai";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(

@@ -91,8 +91,20 @@ export async function POST(
   // Re-extract relationships with new verification context
   runExtractions(ticker, deepseekKey);
 
+  // Smart auto-summary: if >30% of claims changed from unverified, invalidate the summary
+  // so the UI shows "Run Summary" as needed — the thesis may have shifted.
+  const totalClaims = await prisma.claim.count({ where: { stockId: stock.id } });
+  const resolvedNow = updates.filter((u) => u.verdict !== "unresolved").length;
+  if (totalClaims > 0 && resolvedNow / stock.claims.length > 0.3) {
+    await prisma.stock.update({
+      where: { ticker },
+      data: { lastSummaryAt: null },
+    });
+  }
+
   return NextResponse.json({
     verified: updates.length,
     results: updates,
+    summaryStale: resolvedNow / stock.claims.length > 0.3,
   });
 }

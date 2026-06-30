@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import { formatBytes, timeAgo, parseStance, STANCE_COLORS } from "@/lib/db";
+import { ErrorBoundary } from "@/app/components/ErrorBoundary";
 import {
   StanceCard,
   ClaimHealth,
@@ -12,6 +13,7 @@ import {
   ContrarianAngles,
   BottomLine,
   ThesisDrift,
+  ResearchPlan,
   RecentActivity,
 } from "./Overview";
 
@@ -127,6 +129,14 @@ export default function StockPage() {
   const [batchVerifying, setBatchVerifying] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
 
+  // Dedup
+  const [findingDuplicates, setFindingDuplicates] = useState(false);
+  const [dupGroups, setDupGroups] = useState<{
+    claimIds: number[];
+    texts: string[];
+    similarity: number;
+  }[]>([]);
+
   // Relationship remapping
   const [remapping, setRemapping] = useState(false);
   const [remapError, setRemapError] = useState("");
@@ -218,6 +228,33 @@ export default function StockPage() {
 
     setBatchVerifying(false);
     load();
+  }
+
+  async function handleFindDuplicates() {
+    setFindingDuplicates(true);
+    const res = await fetch(`/api/stocks/${ticker}/dedup-claims`, {
+      method: "POST",
+    });
+    setFindingDuplicates(false);
+
+    if (res.ok) {
+      const data = await res.json();
+      setDupGroups(data.groups || []);
+    }
+  }
+
+  async function handleMergeDuplicates(keepId: number, deleteIds: number[]) {
+    await fetch(`/api/stocks/${ticker}/dedup-claims`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keepId, deleteIds }),
+    });
+    setDupGroups((prev) => prev.filter((g) => !deleteIds.includes(g.claimIds[0])));
+    load();
+  }
+
+  function handleExport(format: "csv" | "md") {
+    window.open(`/api/export/claims?format=${format}&ticker=${ticker}`, "_blank");
   }
 
   async function handleUpload(files: FileList | null) {
@@ -421,12 +458,14 @@ export default function StockPage() {
           </div>
 
           {/* Row 2: Research Priorities */}
-          <ResearchPriorities
-            claims={stock.claims}
-            ticker={ticker}
-            onVerify={handleVerifyClaim}
-            verifyingClaimId={verifyingClaimId}
-          />
+          <ErrorBoundary>
+            <ResearchPriorities
+              claims={stock.claims}
+              ticker={ticker}
+              onVerify={handleVerifyClaim}
+              verifyingClaimId={verifyingClaimId}
+            />
+          </ErrorBoundary>
 
           {/* Row 3: Key Relationships + Contrarian Angles */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -441,15 +480,22 @@ export default function StockPage() {
           <BottomLine summary={stock.summary} />
 
           {/* Row 4.5: Thesis Drift */}
-          <ThesisDrift
-            summary={stock.summary}
-            ticker={ticker}
-            resolvedClaimCount={
-              stock.claims.filter(
-                (c) => c.status === "supported" || c.status === "refuted" || c.status === "disputed"
-              ).length
-            }
-          />
+          <ErrorBoundary>
+            <ThesisDrift
+              summary={stock.summary}
+              ticker={ticker}
+              resolvedClaimCount={
+                stock.claims.filter(
+                  (c) => c.status === "supported" || c.status === "refuted" || c.status === "disputed"
+                ).length
+              }
+            />
+          </ErrorBoundary>
+
+          {/* Row 4.6: Research Plan */}
+          <ErrorBoundary>
+            <ResearchPlan ticker={ticker} />
+          </ErrorBoundary>
 
           {/* Row 5: Recent Activity */}
           <RecentActivity timeline={timeline} />
@@ -619,22 +665,104 @@ export default function StockPage() {
                 </button>
               )}
             </div>
-            {stock.claims.filter((c) => c.status === "unverified").length > 0 && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleVerifyAll}
-                disabled={batchVerifying}
-                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
-                  batchVerifying
-                    ? "border border-border text-muted cursor-wait"
-                    : "bg-accent text-bg hover:bg-accent/90"
-                }`}
+                onClick={() => handleExport("csv")}
+                className="text-xs border border-border text-muted px-2 py-1 rounded hover:text-fg transition"
+                title="Export claims as CSV"
               >
-                {batchVerifying
-                  ? `Verifying ${batchProgress.done}/${batchProgress.total}...`
-                  : `Verify All (${stock.claims.filter((c) => c.status === "unverified").length})`}
+                CSV
               </button>
-            )}
+              <button
+                onClick={() => handleExport("md")}
+                className="text-xs border border-border text-muted px-2 py-1 rounded hover:text-fg transition"
+                title="Export claims as Markdown"
+              >
+                MD
+              </button>
+              {stock.claims.length >= 2 && (
+                <button
+                  onClick={handleFindDuplicates}
+                  disabled={findingDuplicates}
+                  className={`text-xs px-2 py-1 rounded transition ${
+                    findingDuplicates
+                      ? "text-muted cursor-wait"
+                      : "border border-border text-muted hover:text-fg"
+                  }`}
+                >
+                  {findingDuplicates ? "Scanning..." : "Find Dups"}
+                </button>
+              )}
+              {stock.claims.filter((c) => c.status === "unverified").length > 0 && (
+                <button
+                  onClick={handleVerifyAll}
+                  disabled={batchVerifying}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                    batchVerifying
+                      ? "border border-border text-muted cursor-wait"
+                      : "bg-accent text-bg hover:bg-accent/90"
+                  }`}
+                >
+                  {batchVerifying
+                    ? `Verifying ${batchProgress.done}/${batchProgress.total}...`
+                    : `Verify All (${stock.claims.filter((c) => c.status === "unverified").length})`}
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Duplicate groups */}
+          {dupGroups.length > 0 && (
+            <div className="mb-4 bg-amber-400/5 border border-amber-400/20 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-amber-400 font-medium">
+                  {dupGroups.length} potential duplicate group
+                  {dupGroups.length !== 1 ? "s" : ""} found (word overlap &gt; 50%)
+                </p>
+                <button
+                  onClick={() => setDupGroups([])}
+                  className="text-muted hover:text-fg text-xs transition"
+                >
+                  Dismiss
+                </button>
+              </div>
+              <div className="space-y-3">
+                {dupGroups.map((g, gi) => (
+                  <div key={gi} className="bg-bg rounded-lg p-3 border border-border">
+                    <p className="text-muted/60 text-xs mb-2">
+                      {g.similarity}% similar · {g.claimIds.length} claims
+                    </p>
+                    <div className="space-y-1.5">
+                      {g.texts.map((t, ti) => (
+                        <div
+                          key={ti}
+                          className="flex items-start gap-2 text-sm"
+                        >
+                          <span className="text-muted text-xs mt-0.5">
+                            {ti + 1}.
+                          </span>
+                          <p className="text-fg/80 flex-1">{t}</p>
+                          {ti > 0 && (
+                            <button
+                              onClick={() =>
+                                handleMergeDuplicates(
+                                  g.claimIds[0],
+                                  [g.claimIds[ti]]
+                                )
+                              }
+                              className="text-accent text-xs hover:underline shrink-0"
+                            >
+                              Merge into #1
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {stock.claims.length === 0 ? (
             <p className="text-muted text-center py-10">

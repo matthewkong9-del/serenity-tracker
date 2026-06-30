@@ -69,6 +69,23 @@ export async function POST(
     // Re-extract relationships with new verification context
     runExtractions(ticker, deepseekKey);
 
+    // Smart auto-summary: if >30% of claims are now resolved, invalidate summary
+    const totalClaims = await prisma.claim.count({
+      where: { stockId: claim.stockId },
+    });
+    const resolvedCount = await prisma.claim.count({
+      where: {
+        stockId: claim.stockId,
+        status: { in: ["supported", "refuted", "disputed"] },
+      },
+    });
+    if (totalClaims > 0 && resolvedCount / totalClaims > 0.3) {
+      await prisma.stock.update({
+        where: { ticker },
+        data: { lastSummaryAt: null },
+      });
+    }
+
     return NextResponse.json({ claim: updatedClaim, verdict });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

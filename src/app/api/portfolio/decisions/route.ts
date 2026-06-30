@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { generateDecisions } from "@/lib/summarize";
+import { generateDecisions } from "@/lib/portfolio-ai";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(_req: NextRequest) {
