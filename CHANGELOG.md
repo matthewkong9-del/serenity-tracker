@@ -1,6 +1,27 @@
 # Changelog
 
-## 2026-06-30 — Quality Infrastructure & Pipeline Hardening
+## 2026-06-30 (pm) — Domain Model Alignment & Price Chart
+
+### Domain Modeling (grill-with-docs)
+- **CONTEXT.md** — domain glossary with all entities, confidence terms, verification pipeline, renamed terms
+- **Entry → Note** rename — schema model, API routes (`/entries` → `/notes`), all code references; `Stock.notes` (String) → `Stock.generalNotes`
+- **Confidence disambiguation** — 3 distinct concepts: `extractionConfidence` (Claim, 1-5), `verificationConfidence` (Verdict, high/med/low), `sourceConfidence` (Relationship, confirmed/speculative/gap). All mapped to original DB columns via `@map("confidence")`
+- **Relationship section** — `"map"` → `"known"` (schema default + all code), tab label `"Map"` → `"Relationships"`
+- **UI label fixes** — `"Maturity Ladder"` → `"Decisions"` in portfolio page
+- **Claim status and verification verdict** kept separate by design (`unresolved` is verdict-only, doesn't overwrite claim status)
+
+### Price Chart
+- **TradingView widget** replaces StanceCard in Overview tab (top-left)
+- Auto-detects exchange prefix: TWSE (4-digit Taiwan), KRX (6-digit Korea), TSE/HKEX
+- Dark theme, daily interval, symbol search enabled
+- Stance badge + confidence + Run Summary moved into BottomLine (Thesis section)
+
+### Fixes
+- Guard against null `type`/`target` in relationship extraction (was crashing MU, POET, BABA)
+- Fixed `parseStance` regex to handle flexible markdown formats
+- vitest config: added `DATABASE_URL` env for test runner
+
+## 2026-06-30 (am) — Quality Infrastructure & Pipeline Hardening
 
 ### Testing & Code Quality
 - **Vitest test suite** — 26 tests: 19 unit (parseStance, formatBytes, timeAgo) + 7 API smoke (stocks, tweets, claims)

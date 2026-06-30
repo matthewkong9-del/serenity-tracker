@@ -1,6 +1,49 @@
 # Dashboard progress log
 
-## 2026-06-30 — Quality infrastructure session
+## 2026-06-30 — Domain modeling session (grill-with-docs)
+
+### Decisions made (domain grilling)
+
+1. **CONTEXT.md** — created domain glossary with all 9 entities, confidence terms, verification pipeline, synonyms
+2. **Entry → Note** — renamed everywhere (schema, API, code, UI already matched)
+3. **Relationship section** — "map" → "known", tab "Map" → "Relationships"
+4. **Confidence disambiguation** — extractionConfidence (1-5), verificationConfidence (high/med/low), sourceConfidence (confirmed/speculative/gap)
+5. **Shared types** — extract to `src/lib/types.ts` (deferred)
+6. **Relationship.type** — tagged approach: 6 known types + "other" fallback (deferred)
+7. **Claim status vs verdict** — kept separate by design, "unresolved" is verdict-only
+8. **Decision naming** — "Maturity Ladder" → "Decisions" in UI
+
+### What we built this session
+
+| # | Change | Files touched |
+|---|--------|---------------|
+| 1 | CONTEXT.md glossary | 1 new file |
+| 2 | Entry → Note rename | 22 files (schema, API dirs, lib, pages) |
+| 3 | section "map" → "known" | schema, relationships.ts, page.tsx |
+| 4 | Tab "Map" → "Relationships" | page.tsx |
+| 5 | Confidence prefixing (3 fields) | schema, verify.ts, relationships.ts, sync route, 5 page components |
+| 6 | "Maturity Ladder" → "Decisions" | portfolio/page.tsx |
+| 7 | PriceChart (TradingView widget) | new file, BottomLine merged with stance info |
+| 8 | vitest env fix | vitest.config.ts |
+
+### Stale items (not yet built)
+
+- [ ] Shared types → `src/lib/types.ts`
+- [ ] Relationship.type tagged approach (badges for 6 known types + other)
+- [ ] ClaimHealth labels: "verified" → "supported" (these are aggregate labels, not status values — lower priority)
+- [ ] Source quality filter for verification (Exa domain scoring)
+- [ ] Spot-check dashboard for extraction QA
+- [ ] Mind map visualization for relationships
+
+### Current state
+
+- TypeScript: clean
+- Lint: 0 errors, 1 warning (img element)
+- Tests: 26/26 passing
+- Format: all files formatted
+- DB: schema pushed, fresh
+
+## 2026-06-30 — Quality infrastructure session (morning)
 
 ### Decisions made (grilling session)
 
