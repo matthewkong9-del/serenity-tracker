@@ -225,3 +225,298 @@ Only include claims worth prioritizing — skip claims that are vague opinions, 
     return [];
   }
 }
+
+/** Result of thesis drift analysis */
+export interface ThesisDriftResult {
+  direction: "strengthening" | "weakening" | "holding" | "unclear";
+  confidence: "high" | "medium" | "low";
+  summary: string;
+  shifts: { claim: string; status: string; impact: string }[];
+}
+
+/**
+ * Detect whether the investment thesis is strengthening, weakening, or holding
+ * by comparing the AI summary against the current claim verification landscape.
+ */
+export async function detectThesisDrift(
+  ticker: string,
+  apiKey: string
+): Promise<ThesisDriftResult | null> {
+  const stock = await prisma.stock.findUnique({
+    where: { ticker },
+    select: {
+      summary: true,
+      claims: {
+        select: { text: true, status: true, evidence: true },
+        orderBy: { updatedAt: "desc" },
+      },
+    },
+  });
+
+  if (!stock || !stock.summary) return null;
+
+  // Only meaningful if there are verified or refuted claims
+  const resolvedClaims = stock.claims.filter(
+    (c) => c.status === "supported" || c.status === "refuted" || c.status === "disputed"
+  );
+  if (resolvedClaims.length === 0) return null;
+
+  const claimsContext = stock.claims
+    .map((c) => {
+      const statusLabel = {
+        unverified: "⚠️ UNVERIFIED",
+        supported: "✅ SUPPORTED",
+        refuted: "❌ REFUTED",
+        disputed: "🔶 DISPUTED",
+      }[c.status] || c.status;
+      let entry = `[${statusLabel}] ${c.text}`;
+      if (c.evidence) entry += `\n  Evidence: ${c.evidence.slice(0, 500)}`;
+      return entry;
+    })
+    .join("\n\n");
+
+  const prompt = `You are an investment analyst tracking thesis drift for $${ticker}.
+
+Compare the AI-generated investment thesis (below) against the current claim verification landscape. Your job: detect whether the thesis is strengthening, weakening, or holding.
+
+THESIS (from the last AI summary):
+${stock.summary.slice(0, 3000)}
+
+CURRENT CLAIM LANDSCAPE:
+${claimsContext}
+
+Analyze:
+1. Does the verified evidence SUPPORT or UNDERMINE the core thesis?
+2. Are refuted claims central to the thesis or peripheral?
+3. Has the balance of evidence shifted since the thesis was written?
+
+Return ONLY valid JSON, no markdown:
+{
+  "direction": "strengthening" | "weakening" | "holding" | "unclear",
+  "confidence": "high" | "medium" | "low",
+  "summary": "2-3 sentence verdict. Be specific — reference the claims and evidence that drove your conclusion.",
+  "shifts": [
+    {
+      "claim": "the claim text",
+      "status": "supported",
+      "impact": "How this claim affects the thesis — supports it, undermines it, or is neutral"
+    }
+  ]
+}
+
+Rules:
+- "strengthening" = verified claims support the thesis, refuted claims are peripheral
+- "weakening" = refuted claims undermine core thesis assumptions
+- "holding" = mixed evidence, no clear directional shift
+- "unclear" = not enough resolved claims to tell
+- Only include shifts you actually used in your analysis. Max 5 shifts.
+- Focus on claims that CHANGED status — if everything is still unverified, say "unclear" with "low" confidence.`;
+
+  try {
+    return await chatJson<ThesisDriftResult>(
+      [{ role: "user", content: prompt }],
+      apiKey,
+      { temperature: 0.2 }
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Stock summary for portfolio attention ranking */
+interface PortfolioStockSummary {
+  ticker: string;
+  name: string | null;
+  sector: string | null;
+  stance: string | null;
+  claimCounts: { unverified: number; supported: number; refuted: number; disputed: number };
+  fileCount: number;
+  hasSummary: boolean;
+  hasExtractionError: boolean;
+  daysSinceLastSummary: number | null;
+}
+
+/**
+ * Rank stocks by "most urgent attention needed" using DeepSeek.
+ * Feeds top candidates (most unverified claims, errors, stale) to the LLM.
+ */
+export async function rankPortfolioAttention(
+  stocks: PortfolioStockSummary[],
+  apiKey: string
+): Promise<{ ticker: string; urgency: number; reason: string }[]> {
+  if (stocks.length === 0) return [];
+
+  // Sort candidates: high unverified count, extraction errors, stale summaries first
+  const sorted = [...stocks].sort((a, b) => {
+    const score = (s: PortfolioStockSummary) =>
+      s.claimCounts.unverified * 3 +
+      (s.hasExtractionError ? 5 : 0) +
+      (s.daysSinceLastSummary && s.daysSinceLastSummary > 4 ? s.daysSinceLastSummary : 0);
+    return score(b) - score(a);
+  });
+
+  // Send top 25 to the LLM
+  const candidates = sorted.slice(0, 25);
+
+  const stockLines = candidates.map((s, i) => {
+    const parts = [`[${i + 1}] $${s.ticker}`];
+    if (s.name) parts.push(` — ${s.name}`);
+    if (s.sector) parts.push(` (${s.sector})`);
+    if (s.stance) parts.push(` | Stance: ${s.stance}`);
+    parts.push(
+      ` | Claims: ${s.claimCounts.unverified} unverified, ${s.claimCounts.supported} supported, ${s.claimCounts.refuted} refuted`
+    );
+    if (s.hasExtractionError) parts.push(` | ⚠️ Extraction error`);
+    if (s.daysSinceLastSummary !== null) {
+      parts.push(` | Last summary: ${s.daysSinceLastSummary}d ago`);
+    } else {
+      parts.push(` | No summary yet`);
+    }
+    parts.push(` | ${s.fileCount} files`);
+    return parts.join("");
+  }).join("\n");
+
+  const prompt = `You are a portfolio manager reviewing your holdings. Rank the following stocks by URGENCY — which need the most immediate attention from your research team.
+
+ATTENTION SIGNALS (in order of importance):
+1. Many unverified claims (things you believe but haven't checked)
+2. Extraction errors (something failed — needs fixing)
+3. Stale or missing summaries (you don't know what's going on)
+4. Refuted claims (the thesis may be wrong)
+5. No documents uploaded (pure speculation with no evidence)
+
+For each stock worth attention, return its number, urgency (1-10, where 10 = drop everything and look at this now), and a 1-sentence reason.
+
+CANDIDATES:
+${stockLines}
+
+Return ONLY valid JSON, no markdown:
+{
+  "ranked": [
+    {"stockIndex": 1, "urgency": 10, "reason": "18 unverified claims and no summary — completely unchecked thesis"},
+    {"stockIndex": 3, "urgency": 8, "reason": "Extraction error + 5 refuted claims — thesis may be unraveling"}
+  ]
+}
+
+Rank only stocks that genuinely need attention. Max 15 entries. Don't rank stocks with 0-1 unverified claims and a recent summary.`;
+
+  try {
+    const result = await chatJson<{
+      ranked: { stockIndex: number; urgency: number; reason: string }[];
+    }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.3 });
+
+    return (result.ranked || []).map((r) => ({
+      ticker: candidates[r.stockIndex - 1]?.ticker ?? "",
+      urgency: Math.min(10, Math.max(1, r.urgency)),
+      reason: r.reason,
+    })).filter((r) => r.ticker);
+  } catch {
+    return [];
+  }
+}
+
+/** Generate maturity ladder + buy/hold/sell decisions for all stocks */
+export async function generateDecisions(
+  apiKey: string
+): Promise<{
+  decisions: {
+    ticker: string;
+    maturity: string;
+    action: string | null;
+    reasoning: string;
+  }[];
+}> {
+  const stocks = await prisma.stock.findMany({
+    select: {
+      ticker: true,
+      name: true,
+      summary: true,
+      claims: {
+        select: { status: true },
+      },
+      files: { select: { id: true } },
+      relationships: { select: { id: true } },
+    },
+  });
+
+  if (stocks.length === 0) return { decisions: [] };
+
+  // Build compact summary per stock
+  const stockLines = stocks.map((s, i) => {
+    const counts = { unverified: 0, supported: 0, refuted: 0, disputed: 0 };
+    for (const c of s.claims) counts[c.status as keyof typeof counts]++;
+
+    const verifiedRate = s.claims.length > 0
+      ? Math.round(((counts.supported + counts.refuted) / s.claims.length) * 100)
+      : 0;
+
+    const parts = [`[${i + 1}] $${s.ticker}`];
+    if (s.name) parts.push(` — ${s.name}`);
+    parts.push(` | Claims: ${counts.unverified}u/${counts.supported}s/${counts.refuted}r (${verifiedRate}% resolved)`);
+    parts.push(` | Files: ${s.files.length}`);
+    parts.push(` | Relationships: ${s.relationships.length}`);
+    if (s.summary) {
+      const summaryBrief = s.summary.slice(0, 300).replace(/\n/g, " ");
+      parts.push(` | Summary: ${summaryBrief}`);
+    } else {
+      parts.push(` | No summary`);
+    }
+    return parts.join("");
+  }).join("\n");
+
+  const prompt = `You are an investment portfolio manager. Classify each stock into a maturity ladder and for the most mature ones, recommend an action.
+
+MATURITY LADDER:
+- **beginning**: Few verified claims, no documents or summary. You're collecting information — the thesis is still forming.
+- **core**: Some verified claims (20-50% resolved), documents uploaded, summary exists. The thesis is taking shape but not yet proven.
+- **actionable**: High verification rate (50%+ claims resolved), multiple documents, confident summary, relationships mapped. You have enough to act.
+
+For each actionable stock, recommend: **buy**, **hold**, or **sell**.
+
+STOCKS:
+${stockLines}
+
+Return ONLY valid JSON, no markdown:
+{
+  "decisions": [
+    {
+      "stockIndex": 1,
+      "maturity": "beginning",
+      "action": null,
+      "reasoning": "Only 2 unverified claims, no documents, no summary"
+    },
+    {
+      "stockIndex": 3,
+      "maturity": "actionable",
+      "action": "buy",
+      "reasoning": "75% of claims verified (8 supported, 2 refuted), 5 documents including earnings reports, confident Bullish stance"
+    }
+  ]
+}
+
+Include ALL stocks. Be honest — if there's not enough data, call it "beginning". That's fine.`;
+
+  try {
+    const result = await chatJson<{
+      decisions: {
+        stockIndex: number;
+        maturity: string;
+        action: string | null;
+        reasoning: string;
+      }[];
+    }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.2 });
+
+    return {
+      decisions: (result.decisions || []).map((d) => ({
+        ticker: stocks[d.stockIndex - 1]?.ticker ?? "",
+        maturity: ["beginning", "core", "actionable"].includes(d.maturity)
+          ? d.maturity
+          : "beginning",
+        action: d.action && ["buy", "hold", "sell"].includes(d.action) ? d.action : null,
+        reasoning: d.reasoning,
+      })).filter((d) => d.ticker),
+    };
+  } catch {
+    return { decisions: [] };
+  }
+}

@@ -11,6 +11,7 @@ import {
   KeyRelationships,
   ContrarianAngles,
   BottomLine,
+  ThesisDrift,
   RecentActivity,
 } from "./Overview";
 
@@ -122,6 +123,10 @@ export default function StockPage() {
   // Claim verification
   const [verifyingClaimId, setVerifyingClaimId] = useState<number | null>(null);
 
+  // Batch verification
+  const [batchVerifying, setBatchVerifying] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
+
   // Relationship remapping
   const [remapping, setRemapping] = useState(false);
   const [remapError, setRemapError] = useState("");
@@ -189,6 +194,29 @@ export default function StockPage() {
       const data = await res.json();
       alert(data.error || "Verification failed");
     }
+    load();
+  }
+
+  async function handleVerifyAll() {
+    const unverified = stock?.claims.filter((c) => c.status === "unverified") || [];
+    if (unverified.length === 0) return;
+
+    setBatchVerifying(true);
+    setBatchProgress({ done: 0, total: unverified.length });
+
+    const res = await fetch(`/api/stocks/${ticker}/verify-all`, {
+      method: "POST",
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      setBatchProgress({ done: data.verified, total: unverified.length });
+    } else {
+      const data = await res.json();
+      alert(data.error || "Batch verification failed");
+    }
+
+    setBatchVerifying(false);
     load();
   }
 
@@ -412,6 +440,17 @@ export default function StockPage() {
           {/* Row 4: Bottom Line */}
           <BottomLine summary={stock.summary} />
 
+          {/* Row 4.5: Thesis Drift */}
+          <ThesisDrift
+            summary={stock.summary}
+            ticker={ticker}
+            resolvedClaimCount={
+              stock.claims.filter(
+                (c) => c.status === "supported" || c.status === "refuted" || c.status === "disputed"
+              ).length
+            }
+          />
+
           {/* Row 5: Recent Activity */}
           <RecentActivity timeline={timeline} />
         </div>
@@ -580,6 +619,21 @@ export default function StockPage() {
                 </button>
               )}
             </div>
+            {stock.claims.filter((c) => c.status === "unverified").length > 0 && (
+              <button
+                onClick={handleVerifyAll}
+                disabled={batchVerifying}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                  batchVerifying
+                    ? "border border-border text-muted cursor-wait"
+                    : "bg-accent text-bg hover:bg-accent/90"
+                }`}
+              >
+                {batchVerifying
+                  ? `Verifying ${batchProgress.done}/${batchProgress.total}...`
+                  : `Verify All (${stock.claims.filter((c) => c.status === "unverified").length})`}
+              </button>
+            )}
           </div>
 
           {stock.claims.length === 0 ? (

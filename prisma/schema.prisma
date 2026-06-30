@@ -22,6 +22,7 @@ model Stock {
   entries        Entry[]
   claims         Claim[]
   relationships  Relationship[]
+  decision       Decision?
 }
 
 model File {
@@ -104,4 +105,15 @@ model Relationship {
   section     String   @default("map") // "map" | "contrarian"
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Decision {
+  id        Int      @id @default(autoincrement())
+  stockId   Int      @unique
+  stock     Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  maturity  String   // "beginning" | "core" | "actionable"
+  action    String?  // "buy" | "hold" | "sell" | null (only for actionable)
+  reasoning String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

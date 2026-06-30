@@ -16,6 +16,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/" className="text-lg font-semibold tracking-tight text-fg">
                 Serenity Tracker
               </a>
+              <a href="/portfolio" className="text-sm text-muted hover:text-fg transition">
+                Portfolio
+              </a>
               <a href="/tweets" className="text-sm text-muted hover:text-fg transition">
                 Tweets
               </a>
