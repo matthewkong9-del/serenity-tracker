@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import { formatBytes, timeAgo, parseStance, STANCE_COLORS } from "@/lib/db";
 import { ErrorBoundary } from "@/app/components/ErrorBoundary";
 import {
-  StanceCard,
+  PriceChart,
   ClaimHealth,
   ResearchPriorities,
   KeyRelationships,
@@ -470,17 +470,10 @@ export default function StockPage() {
       {/* Tab: Overview */}
       {tab === "overview" && (
         <div className="space-y-6">
-          {/* Row 1: Stance + Claim Health */}
+          {/* Row 1: Price Chart + Claim Health */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-              <StanceCard
-                summary={stock.summary}
-                lastSummaryAt={stock.lastSummaryAt}
-                needsSummary={needsSummary}
-                summarizing={summarizing}
-                summaryError={summaryError}
-                onSummarize={handleSummarize}
-              />
+              <PriceChart ticker={ticker} sector={stock.sector} />
             </div>
             <div>
               <ClaimHealth
@@ -513,8 +506,15 @@ export default function StockPage() {
             <ContrarianAngles relationships={stock.relationships} />
           </div>
 
-          {/* Row 4: Bottom Line */}
-          <BottomLine summary={stock.summary} />
+          {/* Row 4: Thesis (stance + bottom line + full analysis) */}
+          <BottomLine
+            summary={stock.summary}
+            lastSummaryAt={stock.lastSummaryAt}
+            needsSummary={needsSummary}
+            summarizing={summarizing}
+            summaryError={summaryError}
+            onSummarize={handleSummarize}
+          />
 
           {/* Row 4.5: Thesis Drift */}
           <ErrorBoundary>

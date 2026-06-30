@@ -1,4 +1,4 @@
-export { StanceCard } from "./StanceCard";
+export { PriceChart } from "./PriceChart";
 export { ClaimHealth } from "./ClaimHealth";
 export { ResearchPriorities } from "./ResearchPriorities";
 export { KeyRelationships } from "./KeyRelationships";
