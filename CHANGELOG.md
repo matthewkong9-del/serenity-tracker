@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-30 (pm2) — Fixes
+
+- Fixed `parseStance` regex to handle flexible markdown formats (`**Current Stance:**` with colon inside bold)
+- Fixed runtime crash on relationship extraction when AI returns null `type`/`target` (MU, POET, BABA)
+- Added `dotenv` to freshness check script so it works from `npm run check`
+- Updated `next.config.mjs` — `serverExternalPackages` deprecated in 14.2, moved to `experimental.serverComponentsExternalPackages`
+- Vitest config: added `DATABASE_URL` env for test runner
+
 ## 2026-06-30 (pm) — Domain Model Alignment & Price Chart
 
 ### Domain Modeling (grill-with-docs)
