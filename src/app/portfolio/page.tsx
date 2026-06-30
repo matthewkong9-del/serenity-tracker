@@ -113,9 +113,7 @@ export default function PortfolioPage() {
     return <div className="text-muted text-center py-20">Loading...</div>;
   }
 
-  const sectors = Array.from(
-    new Set(data.stocks.map((s) => s.sector).filter(Boolean))
-  ) as string[];
+  const sectors = Array.from(new Set(data.stocks.map((s) => s.sector).filter(Boolean))) as string[];
 
   const filtered = sectorFilter
     ? data.stocks.filter((s) => s.sector === sectorFilter)
@@ -146,8 +144,8 @@ export default function PortfolioPage() {
         <div>
           <h1 className="text-2xl font-bold text-fg">Portfolio</h1>
           <p className="text-muted text-sm mt-1">
-            {data.totals.stocks} stocks · {data.totals.claims} claims ·{" "}
-            {data.totals.verifiedRate} verified
+            {data.totals.stocks} stocks · {data.totals.claims} claims · {data.totals.verifiedRate}{" "}
+            verified
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -202,17 +200,12 @@ export default function PortfolioPage() {
           <h2 className="text-sm font-semibold text-fg mb-4">Maturity Ladder</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {(["beginning", "core", "actionable"] as const).map((m) => (
-              <div
-                key={m}
-                className={`border rounded-xl p-4 ${MATURITY_COLORS[m]}`}
-              >
+              <div key={m} className={`border rounded-xl p-4 ${MATURITY_COLORS[m]}`}>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-xs uppercase tracking-wider text-muted font-semibold">
                     {MATURITY_LABELS[m]}
                   </h3>
-                  <span className="text-xs text-muted">
-                    {maturityGroups[m].length}
-                  </span>
+                  <span className="text-xs text-muted">{maturityGroups[m].length}</span>
                 </div>
                 {maturityGroups[m].length === 0 ? (
                   <p className="text-muted text-xs">None</p>
@@ -227,9 +220,7 @@ export default function PortfolioPage() {
                           className="block bg-bg border border-border rounded-lg p-3 hover:border-accent/30 transition"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-fg text-sm font-medium">
-                              ${d.ticker}
-                            </span>
+                            <span className="text-fg text-sm font-medium">${d.ticker}</span>
                             {d.action && (
                               <span
                                 className={`text-xs border rounded-full px-2 py-0.5 ${
@@ -240,12 +231,8 @@ export default function PortfolioPage() {
                               </span>
                             )}
                           </div>
-                          {stock?.name && (
-                            <p className="text-muted text-xs mt-0.5">{stock.name}</p>
-                          )}
-                          <p className="text-muted/70 text-xs mt-1 line-clamp-2">
-                            {d.reasoning}
-                          </p>
+                          {stock?.name && <p className="text-muted text-xs mt-0.5">{stock.name}</p>}
+                          <p className="text-muted/70 text-xs mt-1 line-clamp-2">{d.reasoning}</p>
                         </Link>
                       );
                     })}
@@ -273,9 +260,7 @@ export default function PortfolioPage() {
           {sectors.map((sector) => (
             <button
               key={sector}
-              onClick={() =>
-                setSectorFilter(sectorFilter === sector ? null : sector)
-              }
+              onClick={() => setSectorFilter(sectorFilter === sector ? null : sector)}
               className={`text-xs px-3 py-1 rounded-full border transition ${
                 sectorFilter === sector
                   ? "bg-accent text-bg border-accent"
@@ -337,9 +322,7 @@ export default function PortfolioPage() {
                         <span className="text-xs text-red-400">⚠️ Error</span>
                       )}
                     </div>
-                    {stock.name && (
-                      <p className="text-muted text-xs mt-0.5">{stock.name}</p>
-                    )}
+                    {stock.name && <p className="text-muted text-xs mt-0.5">{stock.name}</p>}
                     {rank && (
                       <p className="text-muted/60 text-xs mt-1 italic line-clamp-1">
                         {rank.reason}
@@ -349,11 +332,7 @@ export default function PortfolioPage() {
 
                   <div className="flex items-center gap-4 text-xs text-muted shrink-0">
                     <span
-                      className={
-                        stock.claimCounts.unverified > 0
-                          ? "text-amber-400"
-                          : "text-muted"
-                      }
+                      className={stock.claimCounts.unverified > 0 ? "text-amber-400" : "text-muted"}
                     >
                       {stock.claimCounts.unverified} unverified
                     </span>

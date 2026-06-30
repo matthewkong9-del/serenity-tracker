@@ -28,13 +28,15 @@ export async function rankClaimsByImportance(
 
   if (!stock || stock.claims.length === 0) return [];
 
-  const claimList = stock.claims.map((c, i) => {
-    const parts = [`[Claim ${i + 1}]`];
-    parts.push(c.text);
-    if (c.source) parts.push(`Source: ${c.source}`);
-    if (c.evidence) parts.push(`Existing evidence: ${c.evidence.slice(0, 300)}`);
-    return parts.join("\n");
-  }).join("\n\n");
+  const claimList = stock.claims
+    .map((c, i) => {
+      const parts = [`[Claim ${i + 1}]`];
+      parts.push(c.text);
+      if (c.source) parts.push(`Source: ${c.source}`);
+      if (c.evidence) parts.push(`Existing evidence: ${c.evidence.slice(0, 300)}`);
+      return parts.join("\n");
+    })
+    .join("\n\n");
 
   const prompt = `You are an investment research analyst. Rank the following unverified claims for $${ticker} by "most impactful to verify" — meaning, which claim, if resolved, would most change your confidence in the investment thesis.
 
@@ -58,11 +60,13 @@ Only include claims worth prioritizing — skip claims that are vague opinions, 
       rankedClaims: { claimIndex: number; priority: number; reason: string }[];
     }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.2 });
 
-    return (result.rankedClaims || []).map((r) => ({
-      claimId: stock.claims[r.claimIndex - 1]?.id ?? 0,
-      priority: r.priority,
-      reason: r.reason,
-    })).filter((r) => r.claimId > 0);
+    return (result.rankedClaims || [])
+      .map((r) => ({
+        claimId: stock.claims[r.claimIndex - 1]?.id ?? 0,
+        priority: r.priority,
+        reason: r.reason,
+      }))
+      .filter((r) => r.claimId > 0);
   } catch {
     return [];
   }
@@ -101,12 +105,13 @@ export async function detectThesisDrift(
 
   const claimsContext = stock.claims
     .map((c) => {
-      const statusLabel = {
-        unverified: "⚠️ UNVERIFIED",
-        supported: "✅ SUPPORTED",
-        refuted: "❌ REFUTED",
-        disputed: "🔶 DISPUTED",
-      }[c.status] || c.status;
+      const statusLabel =
+        {
+          unverified: "⚠️ UNVERIFIED",
+          supported: "✅ SUPPORTED",
+          refuted: "❌ REFUTED",
+          disputed: "🔶 DISPUTED",
+        }[c.status] || c.status;
       let entry = `[${statusLabel}] ${c.text}`;
       if (c.evidence) entry += `\n  Evidence: ${c.evidence.slice(0, 500)}`;
       return entry;
@@ -142,11 +147,9 @@ Rules:
 - Focus on claims that CHANGED status — if everything is still unverified, say "unclear" with "low" confidence.`;
 
   try {
-    return await chatJson<ThesisDriftResult>(
-      [{ role: "user", content: prompt }],
-      apiKey,
-      { temperature: 0.2 }
-    );
+    return await chatJson<ThesisDriftResult>([{ role: "user", content: prompt }], apiKey, {
+      temperature: 0.2,
+    });
   } catch {
     return null;
   }
@@ -182,23 +185,25 @@ export async function rankPortfolioAttention(
 
   const candidates = sorted.slice(0, 25);
 
-  const stockLines = candidates.map((s, i) => {
-    const parts = [`[${i + 1}] $${s.ticker}`];
-    if (s.name) parts.push(` — ${s.name}`);
-    if (s.sector) parts.push(` (${s.sector})`);
-    if (s.stance) parts.push(` | Stance: ${s.stance}`);
-    parts.push(
-      ` | Claims: ${s.claimCounts.unverified} unverified, ${s.claimCounts.supported} supported, ${s.claimCounts.refuted} refuted`
-    );
-    if (s.hasExtractionError) parts.push(` | ⚠️ Extraction error`);
-    if (s.daysSinceLastSummary !== null) {
-      parts.push(` | Last summary: ${s.daysSinceLastSummary}d ago`);
-    } else {
-      parts.push(` | No summary yet`);
-    }
-    parts.push(` | ${s.fileCount} files`);
-    return parts.join("");
-  }).join("\n");
+  const stockLines = candidates
+    .map((s, i) => {
+      const parts = [`[${i + 1}] $${s.ticker}`];
+      if (s.name) parts.push(` — ${s.name}`);
+      if (s.sector) parts.push(` (${s.sector})`);
+      if (s.stance) parts.push(` | Stance: ${s.stance}`);
+      parts.push(
+        ` | Claims: ${s.claimCounts.unverified} unverified, ${s.claimCounts.supported} supported, ${s.claimCounts.refuted} refuted`
+      );
+      if (s.hasExtractionError) parts.push(` | ⚠️ Extraction error`);
+      if (s.daysSinceLastSummary !== null) {
+        parts.push(` | Last summary: ${s.daysSinceLastSummary}d ago`);
+      } else {
+        parts.push(` | No summary yet`);
+      }
+      parts.push(` | ${s.fileCount} files`);
+      return parts.join("");
+    })
+    .join("\n");
 
   const prompt = `You are a portfolio manager reviewing your holdings. Rank the following stocks by URGENCY — which need the most immediate attention from your research team.
 
@@ -229,11 +234,13 @@ Rank only stocks that genuinely need attention. Max 15 entries. Don't rank stock
       ranked: { stockIndex: number; urgency: number; reason: string }[];
     }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.3 });
 
-    return (result.ranked || []).map((r) => ({
-      ticker: candidates[r.stockIndex - 1]?.ticker ?? "",
-      urgency: Math.min(10, Math.max(1, r.urgency)),
-      reason: r.reason,
-    })).filter((r) => r.ticker);
+    return (result.ranked || [])
+      .map((r) => ({
+        ticker: candidates[r.stockIndex - 1]?.ticker ?? "",
+        urgency: Math.min(10, Math.max(1, r.urgency)),
+        reason: r.reason,
+      }))
+      .filter((r) => r.ticker);
   } catch {
     return [];
   }
@@ -241,9 +248,7 @@ Rank only stocks that genuinely need attention. Max 15 entries. Don't rank stock
 
 // ── Maturity ladder decisions ───────────────────────────────────
 
-export async function generateDecisions(
-  apiKey: string
-): Promise<{
+export async function generateDecisions(apiKey: string): Promise<{
   decisions: {
     ticker: string;
     maturity: string;
@@ -264,26 +269,31 @@ export async function generateDecisions(
 
   if (stocks.length === 0) return { decisions: [] };
 
-  const stockLines = stocks.map((s, i) => {
-    const counts = { unverified: 0, supported: 0, refuted: 0, disputed: 0 };
-    for (const c of s.claims) counts[c.status as keyof typeof counts]++;
+  const stockLines = stocks
+    .map((s, i) => {
+      const counts = { unverified: 0, supported: 0, refuted: 0, disputed: 0 };
+      for (const c of s.claims) counts[c.status as keyof typeof counts]++;
 
-    const verifiedRate = s.claims.length > 0
-      ? Math.round(((counts.supported + counts.refuted) / s.claims.length) * 100)
-      : 0;
+      const verifiedRate =
+        s.claims.length > 0
+          ? Math.round(((counts.supported + counts.refuted) / s.claims.length) * 100)
+          : 0;
 
-    const parts = [`[${i + 1}] $${s.ticker}`];
-    if (s.name) parts.push(` — ${s.name}`);
-    parts.push(` | Claims: ${counts.unverified}u/${counts.supported}s/${counts.refuted}r (${verifiedRate}% resolved)`);
-    parts.push(` | Files: ${s.files.length}`);
-    parts.push(` | Relationships: ${s.relationships.length}`);
-    if (s.summary) {
-      parts.push(` | Summary: ${s.summary.slice(0, 300).replace(/\n/g, " ")}`);
-    } else {
-      parts.push(` | No summary`);
-    }
-    return parts.join("");
-  }).join("\n");
+      const parts = [`[${i + 1}] $${s.ticker}`];
+      if (s.name) parts.push(` — ${s.name}`);
+      parts.push(
+        ` | Claims: ${counts.unverified}u/${counts.supported}s/${counts.refuted}r (${verifiedRate}% resolved)`
+      );
+      parts.push(` | Files: ${s.files.length}`);
+      parts.push(` | Relationships: ${s.relationships.length}`);
+      if (s.summary) {
+        parts.push(` | Summary: ${s.summary.slice(0, 300).replace(/\n/g, " ")}`);
+      } else {
+        parts.push(` | No summary`);
+      }
+      return parts.join("");
+    })
+    .join("\n");
 
   const prompt = `You are an investment portfolio manager. Classify each stock into a maturity ladder and for the most mature ones, recommend an action.
 
@@ -318,12 +328,16 @@ Include ALL stocks. Be honest — if there's not enough data, call it "beginning
     }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.2 });
 
     return {
-      decisions: (result.decisions || []).map((d) => ({
-        ticker: stocks[d.stockIndex - 1]?.ticker ?? "",
-        maturity: ["beginning", "core", "actionable"].includes(d.maturity) ? d.maturity : "beginning",
-        action: d.action && ["buy", "hold", "sell"].includes(d.action) ? d.action : null,
-        reasoning: d.reasoning,
-      })).filter((d) => d.ticker),
+      decisions: (result.decisions || [])
+        .map((d) => ({
+          ticker: stocks[d.stockIndex - 1]?.ticker ?? "",
+          maturity: ["beginning", "core", "actionable"].includes(d.maturity)
+            ? d.maturity
+            : "beginning",
+          action: d.action && ["buy", "hold", "sell"].includes(d.action) ? d.action : null,
+          reasoning: d.reasoning,
+        }))
+        .filter((d) => d.ticker),
     };
   } catch {
     return { decisions: [] };
@@ -406,11 +420,9 @@ Return ONLY valid JSON, no markdown:
 Be specific and actionable. No generic advice like "do more research."`;
 
   try {
-    return await chatJson<ResearchPlan>(
-      [{ role: "user", content: prompt }],
-      apiKey,
-      { temperature: 0.3 }
-    );
+    return await chatJson<ResearchPlan>([{ role: "user", content: prompt }], apiKey, {
+      temperature: 0.3,
+    });
   } catch {
     return null;
   }

@@ -1,10 +1,7 @@
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function GET(_req: NextRequest, { params }: { params: { ticker: string } }) {
   const stock = await prisma.stock.findUnique({
     where: { ticker: params.ticker.toUpperCase() },
     include: {
@@ -22,10 +19,7 @@ export async function GET(
   return NextResponse.json(stock);
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function PUT(req: NextRequest, { params }: { params: { ticker: string } }) {
   const body = await req.json();
   const { name, sector, notes } = body;
 
@@ -44,10 +38,7 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function DELETE(_req: NextRequest, { params }: { params: { ticker: string } }) {
   try {
     // Delete associated files from disk
     const stock = await prisma.stock.findUnique({

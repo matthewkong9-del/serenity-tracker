@@ -1,10 +1,7 @@
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function GET(_req: NextRequest, { params }: { params: { ticker: string } }) {
   const stock = await prisma.stock.findUnique({
     where: { ticker: params.ticker.toUpperCase() },
     include: { entries: { orderBy: { createdAt: "desc" } } },
@@ -13,10 +10,7 @@ export async function GET(
   return NextResponse.json(stock.entries);
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function POST(req: NextRequest, { params }: { params: { ticker: string } }) {
   const ticker = params.ticker.toUpperCase();
   const stock = await prisma.stock.findUnique({ where: { ticker } });
   if (!stock) return NextResponse.json({ error: "Not found" }, { status: 404 });

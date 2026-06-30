@@ -27,10 +27,7 @@ export function ContrarianAngles({ relationships }: ContrarianAnglesProps) {
 
       <div className="space-y-3 flex-1">
         {contrarian.slice(0, 3).map((a) => (
-          <div
-            key={a.id}
-            className="border border-purple-400/20 bg-purple-400/5 rounded-lg p-3"
-          >
+          <div key={a.id} className="border border-purple-400/20 bg-purple-400/5 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] uppercase text-purple-400/70 border border-purple-400/20 rounded-full px-2 py-0.5">
                 {a.type}
@@ -38,9 +35,7 @@ export function ContrarianAngles({ relationships }: ContrarianAnglesProps) {
               <span className="text-fg text-sm font-medium">{a.target}</span>
             </div>
             {a.description && (
-              <p className="text-fg/70 text-xs leading-relaxed line-clamp-2">
-                {a.description}
-              </p>
+              <p className="text-fg/70 text-xs leading-relaxed line-clamp-2">{a.description}</p>
             )}
           </div>
         ))}

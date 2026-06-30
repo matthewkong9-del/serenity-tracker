@@ -21,9 +21,7 @@ export default function TweetsPage() {
       .then(setTweets);
   }, []);
 
-  const filtered = tweets.filter((t) =>
-    t.content.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = tweets.filter((t) => t.content.toLowerCase().includes(search.toLowerCase()));
 
   function toggle(id: number) {
     setExpanded((prev) => {
@@ -38,9 +36,7 @@ export default function TweetsPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-fg">Tweets</h1>
-          <p className="text-muted text-sm mt-1">
-            {tweets.length} synced from Serenity
-          </p>
+          <p className="text-muted text-sm mt-1">{tweets.length} synced from Serenity</p>
         </div>
         <input
           type="text"
@@ -61,15 +57,10 @@ export default function TweetsPage() {
             const isLong = tweet.content.length > 400;
             const showFull = expanded.has(tweet.id);
             const displayContent =
-              isLong && !showFull
-                ? tweet.content.slice(0, 400) + "..."
-                : tweet.content;
+              isLong && !showFull ? tweet.content.slice(0, 400) + "..." : tweet.content;
 
             return (
-              <div
-                key={tweet.id}
-                className="bg-surface border border-border rounded-xl p-5"
-              >
+              <div key={tweet.id} className="bg-surface border border-border rounded-xl p-5">
                 <div className="flex items-center gap-3 mb-2">
                   {tweet.timestamp && (
                     <span className="text-xs text-muted">
@@ -93,7 +84,9 @@ export default function TweetsPage() {
                     onClick={() => toggle(tweet.id)}
                     className="text-xs text-accent mt-2 hover:underline"
                   >
-                    {showFull ? "Show less" : `Show full tweet (${tweet.content.length.toLocaleString()} chars)`}
+                    {showFull
+                      ? "Show less"
+                      : `Show full tweet (${tweet.content.length.toLocaleString()} chars)`}
                   </button>
                 )}
               </div>

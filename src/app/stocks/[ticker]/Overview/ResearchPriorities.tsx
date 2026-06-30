@@ -82,10 +82,7 @@ export function ResearchPriorities({
       ) : loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="animate-pulse bg-bg rounded-lg h-12"
-            />
+            <div key={i} className="animate-pulse bg-bg rounded-lg h-12" />
           ))}
         </div>
       ) : error ? (
@@ -104,8 +101,8 @@ export function ResearchPriorities({
       ) : priorities.length === 0 ? (
         <p className="text-muted text-xs">
           {unverifiedClaims.length} unverified claim
-          {unverifiedClaims.length > 1 ? "s" : ""}. Click &ldquo;Re-rank&rdquo; to
-          prioritize by impact.
+          {unverifiedClaims.length > 1 ? "s" : ""}. Click &ldquo;Re-rank&rdquo; to prioritize by
+          impact.
         </p>
       ) : (
         <div className="space-y-3">
@@ -121,12 +118,8 @@ export function ResearchPriorities({
                   {p.priority}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-fg text-sm leading-relaxed line-clamp-2">
-                    {claim.text}
-                  </p>
-                  <p className="text-muted/70 text-xs mt-1 italic line-clamp-1">
-                    {p.reason}
-                  </p>
+                  <p className="text-fg text-sm leading-relaxed line-clamp-2">{claim.text}</p>
+                  <p className="text-muted/70 text-xs mt-1 italic line-clamp-1">{p.reason}</p>
                 </div>
                 <button
                   onClick={() => onVerify(claim.id)}

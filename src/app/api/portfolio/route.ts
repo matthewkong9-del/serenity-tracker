@@ -48,9 +48,7 @@ export async function GET() {
     };
   });
 
-  const verifiedRate = totalClaims > 0
-    ? Math.round((totalResolved / totalClaims) * 100)
-    : 0;
+  const verifiedRate = totalClaims > 0 ? Math.round((totalResolved / totalClaims) * 100) : 0;
 
   return NextResponse.json({
     stocks: stockList,
@@ -65,10 +63,6 @@ export async function GET() {
 
 function parseStanceFromSummary(summary: string | null): string | null {
   if (!summary) return null;
-  const match = summary.match(
-    /\*\*Stance\*\*[:\s]*.*?(Bullish|Bearish|Neutral)/i
-  );
-  return match
-    ? match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()
-    : null;
+  const match = summary.match(/\*\*Stance\*\*[:\s]*.*?(Bullish|Bearish|Neutral)/i);
+  return match ? match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase() : null;
 }

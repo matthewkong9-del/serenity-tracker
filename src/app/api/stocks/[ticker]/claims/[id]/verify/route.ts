@@ -20,10 +20,7 @@ export async function POST(
     );
   }
   if (!deepseekKey) {
-    return NextResponse.json(
-      { error: "DEEPSEEK_API_KEY not configured" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "DEEPSEEK_API_KEY not configured" }, { status: 500 });
   }
 
   const claim = await prisma.claim.findUnique({
@@ -36,12 +33,7 @@ export async function POST(
   }
 
   try {
-    const verdict = await verifyClaim(
-      claim.text,
-      ticker,
-      exaKey,
-      deepseekKey
-    );
+    const verdict = await verifyClaim(claim.text, ticker, exaKey, deepseekKey);
 
     // Build evidence block
     const evidenceParts: string[] = [];
@@ -52,9 +44,7 @@ export async function POST(
     if (verdict.sources.length > 0) {
       evidenceParts.push(
         "\nSources:\n" +
-          verdict.sources
-            .map((s) => `- ${s.title}: ${s.url}\n  "${s.snippet}"`)
-            .join("\n")
+          verdict.sources.map((s) => `- ${s.title}: ${s.url}\n  "${s.snippet}"`).join("\n")
       );
     }
 

@@ -25,11 +25,7 @@ interface ClaimHealthProps {
   onFilterClick: (status: string) => void;
 }
 
-export function ClaimHealth({
-  claims,
-  currentFilter,
-  onFilterClick,
-}: ClaimHealthProps) {
+export function ClaimHealth({ claims, currentFilter, onFilterClick }: ClaimHealthProps) {
   const statuses = ["unverified", "supported", "refuted", "disputed"] as const;
 
   const counts: Record<string, number> = {};
@@ -56,9 +52,7 @@ export function ClaimHealth({
               className={`w-full text-left text-xs border rounded-lg px-3 py-2.5 transition hover:opacity-80 flex items-center justify-between ${
                 CLAIM_COLORS[s]
               } ${
-                currentFilter === s
-                  ? "ring-2 ring-offset-2 ring-offset-surface ring-accent/50"
-                  : ""
+                currentFilter === s ? "ring-2 ring-offset-2 ring-offset-surface ring-accent/50" : ""
               }`}
             >
               <span>{CLAIM_LABELS[s]}</span>

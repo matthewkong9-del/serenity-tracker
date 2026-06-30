@@ -3,10 +3,7 @@ import { verifyClaims } from "@/lib/verify";
 import { runExtractions } from "@/lib/relationships";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function POST(_req: NextRequest, { params }: { params: { ticker: string } }) {
   const ticker = params.ticker.toUpperCase();
 
   const exaKey = process.env.EXA_API_KEY;
@@ -19,10 +16,7 @@ export async function POST(
     );
   }
   if (!deepseekKey) {
-    return NextResponse.json(
-      { error: "DEEPSEEK_API_KEY not configured" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "DEEPSEEK_API_KEY not configured" }, { status: 500 });
   }
 
   const stock = await prisma.stock.findUnique({
@@ -66,16 +60,15 @@ export async function POST(
       evidenceParts.push(
         "\nSources:\n" +
           verdict.sources
-            .map((s: { url: string; title: string; snippet: string }) =>
-              `- ${s.title}: ${s.url}\n  "${s.snippet}"`)
+            .map(
+              (s: { url: string; title: string; snippet: string }) =>
+                `- ${s.title}: ${s.url}\n  "${s.snippet}"`
+            )
             .join("\n")
       );
     }
 
-    const newStatus =
-      verdict.verdict === "unresolved"
-        ? "unverified"
-        : verdict.verdict;
+    const newStatus = verdict.verdict === "unresolved" ? "unverified" : verdict.verdict;
 
     await prisma.claim.update({
       where: { id: claimId },

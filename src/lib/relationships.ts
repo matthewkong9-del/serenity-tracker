@@ -42,9 +42,7 @@ async function buildContextForStock(ticker: string): Promise<string | null> {
   if (tweets.length > 0) {
     sections.push("--- TWEETS BY SERENITY ---");
     for (const t of tweets) {
-      const date = t.timestamp
-        ? new Date(t.timestamp).toLocaleDateString()
-        : "unknown";
+      const date = t.timestamp ? new Date(t.timestamp).toLocaleDateString() : "unknown";
       sections.push(`[Tweet ${date}]\n${t.content}`);
     }
   }
@@ -179,10 +177,7 @@ ${context}`;
 
 /** Run both extractions (map + contrarian) and persist any errors to the Stock record so
  *  the UI can display them. Fire-and-forget safe: errors are surfaced on next page load. */
-export async function runExtractions(
-  ticker: string,
-  apiKey: string
-): Promise<void> {
+export async function runExtractions(ticker: string, apiKey: string): Promise<void> {
   const results = await Promise.allSettled([
     extractRelationships(ticker, apiKey),
     extractContrarianAngles(ticker, apiKey),
@@ -206,10 +201,7 @@ export async function runExtractions(
   }
 }
 
-export async function extractRelationships(
-  ticker: string,
-  apiKey: string
-): Promise<void> {
+export async function extractRelationships(ticker: string, apiKey: string): Promise<void> {
   const context = await buildContextForStock(ticker);
   if (!context) return;
 
@@ -244,10 +236,7 @@ export async function extractRelationships(
   });
 }
 
-export async function extractContrarianAngles(
-  ticker: string,
-  apiKey: string
-): Promise<void> {
+export async function extractContrarianAngles(ticker: string, apiKey: string): Promise<void> {
   const context = await buildContextForStock(ticker);
   if (!context) return;
 

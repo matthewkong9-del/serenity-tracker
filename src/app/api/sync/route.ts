@@ -73,7 +73,6 @@ ${content.slice(0, 8000)}`;
   }>([{ role: "user", content: prompt }], apiKey);
 }
 
-
 export async function POST(req: NextRequest) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
@@ -130,15 +129,12 @@ export async function POST(req: NextRequest) {
       // Quoted content — find matching close quote
       const rest = afterFirstComma.slice(1);
       const lastQuote = rest.lastIndexOf('"');
-      content = lastQuote >= 0
-        ? rest.slice(0, lastQuote).replace(/""/g, '"')
-        : rest.replace(/""/g, '"');
+      content =
+        lastQuote >= 0 ? rest.slice(0, lastQuote).replace(/""/g, '"') : rest.replace(/""/g, '"');
     } else {
       // Unquoted content — take everything up to the next comma or end
       const nextComma = afterFirstComma.indexOf(",");
-      content = nextComma >= 0
-        ? afterFirstComma.slice(0, nextComma)
-        : afterFirstComma;
+      content = nextComma >= 0 ? afterFirstComma.slice(0, nextComma) : afterFirstComma;
     }
 
     if (content.trim()) {
@@ -280,7 +276,10 @@ export async function POST(req: NextRequest) {
     try {
       await runExtractions(ticker, apiKey);
     } catch (e: any) {
-      errors.push({ index: 0, error: `Relationship extraction failed for ${ticker}: ${e.message}` });
+      errors.push({
+        index: 0,
+        error: `Relationship extraction failed for ${ticker}: ${e.message}`,
+      });
     }
   }
 

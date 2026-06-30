@@ -50,8 +50,8 @@ export function ResearchPlan({ ticker }: ResearchPlanProps) {
           </button>
         </div>
         <p className="text-muted text-xs">
-          Generate an AI research plan: which documents to find, which claims to
-          verify, and what gaps are holding this stock back.
+          Generate an AI research plan: which documents to find, which claims to verify, and what
+          gaps are holding this stock back.
         </p>
       </div>
     );
@@ -65,10 +65,7 @@ export function ResearchPlan({ ticker }: ResearchPlanProps) {
         </h2>
         <div className="flex items-center gap-2">
           {plan && !loading && (
-            <button
-              onClick={() => setPlan(null)}
-              className="text-accent text-xs hover:underline"
-            >
+            <button onClick={() => setPlan(null)} className="text-accent text-xs hover:underline">
               Regenerate
             </button>
           )}
@@ -148,9 +145,7 @@ export function ResearchPlan({ ticker }: ResearchPlanProps) {
               <ol className="space-y-1.5">
                 {plan.nextSteps.map((s, i) => (
                   <li key={i} className="text-fg/70 text-sm flex items-start gap-2">
-                    <span className="text-accent text-xs font-mono mt-0.5">
-                      {i + 1}.
-                    </span>
+                    <span className="text-accent text-xs font-mono mt-0.5">{i + 1}.</span>
                     {s}
                   </li>
                 ))}

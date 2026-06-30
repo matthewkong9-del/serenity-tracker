@@ -6,10 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
  * Find potentially duplicate claims using word overlap similarity.
  * Returns groups of similar claims. User can merge or dismiss.
  */
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function POST(_req: NextRequest, { params }: { params: { ticker: string } }) {
   const ticker = params.ticker.toUpperCase();
 
   const stock = await prisma.stock.findUnique({
@@ -85,10 +82,7 @@ export async function POST(
 }
 
 /** DELETE /api/stocks/[ticker]/dedup-claims — merge a group (keep first, delete rest) */
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function DELETE(req: NextRequest, { params }: { params: { ticker: string } }) {
   const { keepId, deleteIds } = await req.json();
   if (!keepId || !deleteIds || !Array.isArray(deleteIds)) {
     return NextResponse.json({ error: "keepId and deleteIds required" }, { status: 400 });

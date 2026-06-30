@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/db";
 import { chat } from "@/lib/deepseek";
 
-const SYSTEM_PROMPT = (ticker: string) => `You are a skeptical analyst. You work for the user, NOT for Serenity. Serenity's tweets are opinions — documents are evidence. Your job: stress-test his thesis.
+const SYSTEM_PROMPT = (
+  ticker: string
+) => `You are a skeptical analyst. You work for the user, NOT for Serenity. Serenity's tweets are opinions — documents are evidence. Your job: stress-test his thesis.
 
 Be CONCISE. Use short bullets. No paragraphs over 3 lines. The user wants to scan, not study.
 
@@ -78,12 +80,13 @@ async function buildContext(stock: StockWithData): Promise<string> {
   if (stock.claims.length > 0) {
     sections.push("--- CLAIMS (extracted from tweets, with verification status) ---");
     for (const c of stock.claims) {
-      const statusLabel = {
-        unverified: "⚠️ UNVERIFIED",
-        supported: "✅ SUPPORTED",
-        refuted: "❌ REFUTED",
-        disputed: "🔶 DISPUTED",
-      }[c.status] || c.status;
+      const statusLabel =
+        {
+          unverified: "⚠️ UNVERIFIED",
+          supported: "✅ SUPPORTED",
+          refuted: "❌ REFUTED",
+          disputed: "🔶 DISPUTED",
+        }[c.status] || c.status;
       sections.push(`[${statusLabel}] ${c.text}`);
       if (c.evidence) sections.push(`  Evidence: ${c.evidence}`);
       if (c.source) sections.push(`  Source: ${c.source}`);
@@ -129,7 +132,8 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
 
   const context = await buildContext(stock);
 
-  if (!context.trim()) throw new Error("No content to summarize. Add tweets, files, or notes first.");
+  if (!context.trim())
+    throw new Error("No content to summarize. Add tweets, files, or notes first.");
 
   const summaryText = await chat(
     [

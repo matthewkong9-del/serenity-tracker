@@ -47,8 +47,7 @@ export default function ConceptsContent() {
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (categoryFilter && categoryFilter !== "all")
-      params.set("category", categoryFilter);
+    if (categoryFilter && categoryFilter !== "all") params.set("category", categoryFilter);
 
     fetch(`/api/concepts?${params.toString()}`)
       .then((r) => r.json())
@@ -105,10 +104,7 @@ export default function ConceptsContent() {
   }
 
   const totalConcepts = concepts.length;
-  const totalTweetLinks = concepts.reduce(
-    (sum, c) => sum + c._count.tweets,
-    0
-  );
+  const totalTweetLinks = concepts.reduce((sum, c) => sum + c._count.tweets, 0);
 
   return (
     <div>
@@ -135,11 +131,7 @@ export default function ConceptsContent() {
         {categories.map((cat) => (
           <button
             key={cat.name}
-            onClick={() =>
-              setCategoryFilter(
-                categoryFilter === cat.name ? "all" : cat.name
-              )
-            }
+            onClick={() => setCategoryFilter(categoryFilter === cat.name ? "all" : cat.name)}
             className={`text-xs px-3 py-1.5 rounded-full border transition ${
               categoryFilter === cat.name
                 ? "bg-accent text-bg border-accent"
@@ -156,9 +148,7 @@ export default function ConceptsContent() {
         <p className="text-muted text-center py-20">Loading...</p>
       ) : concepts.length === 0 ? (
         <div className="text-center py-20">
-          <p className="text-muted text-lg mb-4">
-            No concepts yet.
-          </p>
+          <p className="text-muted text-lg mb-4">No concepts yet.</p>
           {backfillMsg ? (
             <p className="text-xs text-accent mb-4">{backfillMsg}</p>
           ) : (
@@ -179,11 +169,7 @@ export default function ConceptsContent() {
           {Array.from(grouped.entries()).map(([category, items]) => (
             <div key={category}>
               <h2 className="text-xs text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    categoryColor(category).split(" ")[2]
-                  }`}
-                />
+                <span className={`w-2 h-2 rounded-full ${categoryColor(category).split(" ")[2]}`} />
                 {category}
                 <span className="text-muted/50">({items.length})</span>
               </h2>
@@ -200,9 +186,7 @@ export default function ConceptsContent() {
                       className="w-full text-left p-4 flex items-start justify-between"
                     >
                       <div className="min-w-0">
-                        <span className="text-fg text-sm font-medium">
-                          {concept.name}
-                        </span>
+                        <span className="text-fg text-sm font-medium">{concept.name}</span>
                         {concept.description && (
                           <p className="text-muted text-xs mt-1 line-clamp-2">
                             {concept.description}
@@ -234,9 +218,7 @@ export default function ConceptsContent() {
                               <div className="flex items-center gap-2 mb-1">
                                 {tweet.timestamp && (
                                   <span className="text-xs text-muted">
-                                    {new Date(
-                                      tweet.timestamp
-                                    ).toLocaleDateString()}
+                                    {new Date(tweet.timestamp).toLocaleDateString()}
                                   </span>
                                 )}
                                 <Link
@@ -248,10 +230,9 @@ export default function ConceptsContent() {
                               </div>
                               {(() => {
                                 const isLong = tweet.content.length > 300;
-                                const display =
-                                  isLong
-                                    ? tweet.content.slice(0, 300) + "..."
-                                    : tweet.content;
+                                const display = isLong
+                                  ? tweet.content.slice(0, 300) + "..."
+                                  : tweet.content;
                                 return (
                                   <p className="text-fg/70 text-xs whitespace-pre-wrap leading-relaxed">
                                     {display}

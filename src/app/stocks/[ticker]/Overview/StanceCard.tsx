@@ -27,9 +27,13 @@ export function StanceCard({
 
   // Extract first meaningful paragraph as thesis (after heading line, before any "##" or "**")
   const thesisParts = summary?.split(/\n(?=##|\*\*)/);
-  const thesis = thesisParts && thesisParts.length > 0
-    ? thesisParts[0].replace(/^# \$[A-Z]+.*?\n+/, "").trim().slice(0, 200)
-    : null;
+  const thesis =
+    thesisParts && thesisParts.length > 0
+      ? thesisParts[0]
+          .replace(/^# \$[A-Z]+.*?\n+/, "")
+          .trim()
+          .slice(0, 200)
+      : null;
 
   return (
     <div className="bg-surface border border-border rounded-xl p-5 h-full flex flex-col">
@@ -37,31 +41,21 @@ export function StanceCard({
         🧠 AI Thesis
       </h2>
 
-      {summaryError && (
-        <p className="text-red-400 text-xs mb-3">{summaryError}</p>
-      )}
+      {summaryError && <p className="text-red-400 text-xs mb-3">{summaryError}</p>}
 
       {summary ? (
         <>
           <div className="flex items-center gap-3 mb-3">
             {stance && (
-              <span
-                className={`text-xs border rounded-full px-3 py-1 ${STANCE_COLORS[stance]}`}
-              >
+              <span className={`text-xs border rounded-full px-3 py-1 ${STANCE_COLORS[stance]}`}>
                 {stance}
               </span>
             )}
-            {confidence && (
-              <span className="text-xs text-muted">
-                {confidence} confidence
-              </span>
-            )}
+            {confidence && <span className="text-xs text-muted">{confidence} confidence</span>}
           </div>
 
           {thesis && (
-            <p className="text-fg/70 text-sm leading-relaxed line-clamp-2 mb-4">
-              {thesis}
-            </p>
+            <p className="text-fg/70 text-sm leading-relaxed line-clamp-2 mb-4">{thesis}</p>
           )}
 
           {lastSummaryAt && (
@@ -88,11 +82,7 @@ export function StanceCard({
               : "bg-bg text-muted border border-border cursor-not-allowed"
           }`}
         >
-          {summarizing
-            ? "Analyzing..."
-            : needsSummary
-            ? "Run Summary"
-            : "Up to date ✓"}
+          {summarizing ? "Analyzing..." : needsSummary ? "Run Summary" : "Up to date ✓"}
         </button>
       </div>
     </div>

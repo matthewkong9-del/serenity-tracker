@@ -10,10 +10,10 @@ export type Stance = "Bullish" | "Bearish" | "Neutral" | null;
 
 export function parseStance(summary: string | null): Stance {
   if (!summary) return null;
-  const match = summary.match(
-    /\*\*Current Stance\*\*[:\s]*\*?(Bullish|Bearish|Neutral)\*?/i
-  );
-  return match ? (match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()) as Stance : null;
+  const match = summary.match(/\*\*Current Stance\*\*[:\s]*\*?(Bullish|Bearish|Neutral)\*?/i);
+  return match
+    ? ((match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()) as Stance)
+    : null;
 }
 
 export const STANCE_COLORS: Record<NonNullable<Stance>, string> = {

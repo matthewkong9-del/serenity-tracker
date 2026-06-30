@@ -159,18 +159,10 @@ export default function ClaimsContent() {
 
         {totalClaims > 0 && (
           <div className="flex flex-wrap gap-4 mt-3 text-xs">
-            <span className="text-green-400">
-              ✅ {counts.supported || 0} verified
-            </span>
-            <span className="text-red-400">
-              ❌ {counts.refuted || 0} refuted
-            </span>
-            <span className="text-blue-400">
-              ⚔️ {counts.disputed || 0} disputed
-            </span>
-            <span className="text-yellow-400">
-              ⏳ {counts.unverified || 0} unverified
-            </span>
+            <span className="text-green-400">✅ {counts.supported || 0} verified</span>
+            <span className="text-red-400">❌ {counts.refuted || 0} refuted</span>
+            <span className="text-blue-400">⚔️ {counts.disputed || 0} disputed</span>
+            <span className="text-yellow-400">⏳ {counts.unverified || 0} unverified</span>
           </div>
         )}
       </div>
@@ -178,9 +170,7 @@ export default function ClaimsContent() {
       {/* Filters bar */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="flex flex-wrap gap-1.5">
-          {(
-            ["all", "unverified", "supported", "refuted", "disputed"] as const
-          ).map((s) => (
+          {(["all", "unverified", "supported", "refuted", "disputed"] as const).map((s) => (
             <button
               key={s}
               onClick={() => setStatus(s)}
@@ -190,9 +180,7 @@ export default function ClaimsContent() {
                   : "border-border text-muted hover:text-fg hover:border-muted"
               }`}
             >
-              {s === "all"
-                ? `All (${totalClaims})`
-                : `${s} (${counts[s] || 0})`}
+              {s === "all" ? `All (${totalClaims})` : `${s} (${counts[s] || 0})`}
             </button>
           ))}
         </div>
@@ -219,9 +207,7 @@ export default function ClaimsContent() {
       {/* TweetId filter banner */}
       {tweetId && (
         <div className="bg-surface border border-border rounded-lg px-4 py-2 mb-6 flex items-center justify-between text-sm">
-          <span className="text-muted">
-            Filtered to claims from tweet #{tweetId}
-          </span>
+          <span className="text-muted">Filtered to claims from tweet #{tweetId}</span>
           <button
             onClick={() => router.push("/claims")}
             className="text-accent text-xs hover:underline"
@@ -253,10 +239,7 @@ export default function ClaimsContent() {
       ) : (
         <div className="space-y-3">
           {claims.map((claim) => (
-            <div
-              key={claim.id}
-              className="bg-surface border border-border rounded-xl p-4"
-            >
+            <div key={claim.id} className="bg-surface border border-border rounded-xl p-4">
               <div className="flex items-start gap-3">
                 <button
                   onClick={() => cycleClaimStatus(claim)}
@@ -279,15 +262,9 @@ export default function ClaimsContent() {
                       ${claim.stock.ticker}
                     </Link>
                     {claim.stock.name && (
-                      <span className="text-xs text-muted">
-                        {claim.stock.name}
-                      </span>
+                      <span className="text-xs text-muted">{claim.stock.name}</span>
                     )}
-                    {claim.source && (
-                      <span className="text-xs text-muted/70">
-                        {claim.source}
-                      </span>
-                    )}
+                    {claim.source && <span className="text-xs text-muted/70">{claim.source}</span>}
                     <span className="text-xs text-muted/50">
                       {new Date(claim.createdAt).toLocaleDateString()}
                     </span>
@@ -301,10 +278,7 @@ export default function ClaimsContent() {
                           {claim.tweet.timestamp &&
                             ` — ${new Date(claim.tweet.timestamp).toLocaleDateString()}`}
                         </span>
-                        <Link
-                          href={`/tweets`}
-                          className="text-xs text-accent hover:underline"
-                        >
+                        <Link href={`/tweets`} className="text-xs text-accent hover:underline">
                           all tweets
                         </Link>
                       </div>
@@ -345,9 +319,7 @@ export default function ClaimsContent() {
                       />
                       <div className="flex gap-2">
                         <button
-                          onClick={() =>
-                            saveClaimEvidence(claim.stock.ticker, claim.id)
-                          }
+                          onClick={() => saveClaimEvidence(claim.stock.ticker, claim.id)}
                           className="bg-accent text-bg px-3 py-1.5 rounded text-xs font-medium"
                         >
                           Save

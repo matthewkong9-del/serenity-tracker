@@ -18,23 +18,19 @@ const confidenceDot = (c: string) =>
   c === "confirmed"
     ? "border-emerald-400 bg-emerald-400/20"
     : c === "speculative"
-    ? "border-amber-400 bg-amber-400/20"
-    : "border-slate-500 bg-slate-500/20";
+      ? "border-amber-400 bg-amber-400/20"
+      : "border-slate-500 bg-slate-500/20";
 
 const confidenceBadge = (c: string) =>
   c === "confirmed"
     ? "text-emerald-400 border-emerald-400/20 bg-emerald-400/10"
     : c === "speculative"
-    ? "text-amber-400 border-amber-400/20 bg-amber-400/10"
-    : "text-slate-400 border-slate-400/20 bg-slate-400/10";
+      ? "text-amber-400 border-amber-400/20 bg-amber-400/10"
+      : "text-slate-400 border-slate-400/20 bg-slate-400/10";
 
-const confidenceLabel = (c: string) =>
-  c === "confirmed" ? "✓" : c === "speculative" ? "?" : "⟳";
+const confidenceLabel = (c: string) => (c === "confirmed" ? "✓" : c === "speculative" ? "?" : "⟳");
 
-export function KeyRelationships({
-  relationships,
-  onViewAll,
-}: KeyRelationshipsProps) {
+export function KeyRelationships({ relationships, onViewAll }: KeyRelationshipsProps) {
   const mapRels = relationships.filter((r) => r.section !== "contrarian");
 
   // Count by type
@@ -91,9 +87,7 @@ export function KeyRelationships({
                 />
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-fg text-sm font-medium truncate">
-                      {r.target}
-                    </span>
+                    <span className="text-fg text-sm font-medium truncate">{r.target}</span>
                     <span
                       className={`text-[10px] border rounded-full px-1.5 py-0.5 ${confidenceBadge(r.confidence)}`}
                     >
@@ -101,9 +95,7 @@ export function KeyRelationships({
                     </span>
                   </div>
                   {r.description && (
-                    <p className="text-muted/60 text-xs line-clamp-1 mt-0.5">
-                      {r.description}
-                    </p>
+                    <p className="text-muted/60 text-xs line-clamp-1 mt-0.5">{r.description}</p>
                   )}
                 </div>
               </div>

@@ -5,10 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(_req: NextRequest) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    return NextResponse.json(
-      { error: "DEEPSEEK_API_KEY not configured" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "DEEPSEEK_API_KEY not configured" }, { status: 500 });
   }
 
   try {

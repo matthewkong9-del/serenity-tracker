@@ -27,7 +27,12 @@ export default function Home() {
   );
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
-  const [syncResult, setSyncResult] = useState<{ newTweets: number; skippedTweets: number; totalClaims: number; newStocks: string[] } | null>(null);
+  const [syncResult, setSyncResult] = useState<{
+    newTweets: number;
+    skippedTweets: number;
+    totalClaims: number;
+    newStocks: string[];
+  } | null>(null);
 
   useEffect(() => {
     fetch("/api/stocks")
@@ -52,9 +57,13 @@ export default function Home() {
     const data = await res.json();
     setSummarizingAll(false);
     if (data.summarized > 0 || data.failed > 0) {
-      setSummarizeResult(`Updated ${data.summarized} stock${data.summarized !== 1 ? "s" : ""}${data.failed > 0 ? `, ${data.failed} failed` : ""}`);
+      setSummarizeResult(
+        `Updated ${data.summarized} stock${data.summarized !== 1 ? "s" : ""}${data.failed > 0 ? `, ${data.failed} failed` : ""}`
+      );
       // Refresh stock list to show new stances
-      fetch("/api/stocks").then((r) => r.json()).then(setStocks);
+      fetch("/api/stocks")
+        .then((r) => r.json())
+        .then(setStocks);
     } else {
       setSummarizeResult(data.message || "Done");
     }
@@ -81,7 +90,9 @@ export default function Home() {
         setSyncResult(data);
         setSyncMsg("");
         // Refresh stock list
-        fetch("/api/stocks").then((r) => r.json()).then(setStocks);
+        fetch("/api/stocks")
+          .then((r) => r.json())
+          .then(setStocks);
       }
     } catch (e: any) {
       setSyncMsg(`Error: ${e.message}`);
@@ -95,9 +106,7 @@ export default function Home() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-fg">Stocks</h1>
-          <p className="text-muted text-sm mt-1">
-            {stocks.length} tracked
-          </p>
+          <p className="text-muted text-sm mt-1">{stocks.length} tracked</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -116,14 +125,14 @@ export default function Home() {
           />
         </div>
       </div>
-      {summarizeResult && (
-        <p className="text-xs text-accent mb-4 -mt-4">{summarizeResult}</p>
-      )}
+      {summarizeResult && <p className="text-xs text-accent mb-4 -mt-4">{summarizeResult}</p>}
 
       {/* Sync Panel */}
       <div className="bg-surface border border-border rounded-xl p-4 mb-6">
         <div className="flex items-center gap-3">
-          <span className="text-xs text-muted uppercase tracking-wider whitespace-nowrap">Tweet Sync</span>
+          <span className="text-xs text-muted uppercase tracking-wider whitespace-nowrap">
+            Tweet Sync
+          </span>
           <input
             type="text"
             value={csvUrl}
@@ -139,9 +148,7 @@ export default function Home() {
             {syncing ? "Syncing..." : "Sync"}
           </button>
         </div>
-        {syncMsg && (
-          <p className="text-xs text-muted mt-2">{syncMsg}</p>
-        )}
+        {syncMsg && <p className="text-xs text-muted mt-2">{syncMsg}</p>}
         {syncResult && (
           <div className="mt-3 border-t border-border pt-3 flex gap-4 text-xs">
             <span className="text-accent">{syncResult.newTweets} new tweets</span>
@@ -201,40 +208,41 @@ export default function Home() {
           {filtered.map((stock) => {
             const stance = parseStance(stock.summary);
             return (
-            <Link
-              key={stock.id}
-              href={`/stocks/${stock.ticker}`}
-              className="block bg-surface border border-border rounded-xl p-5 hover:border-accent/40 transition group"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-fg group-hover:text-accent transition">
-                    ${stock.ticker}
-                  </h2>
-                  {stock.name && (
-                    <p className="text-muted text-sm mt-0.5">{stock.name}</p>
-                  )}
+              <Link
+                key={stock.id}
+                href={`/stocks/${stock.ticker}`}
+                className="block bg-surface border border-border rounded-xl p-5 hover:border-accent/40 transition group"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-fg group-hover:text-accent transition">
+                      ${stock.ticker}
+                    </h2>
+                    {stock.name && <p className="text-muted text-sm mt-0.5">{stock.name}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {stance && (
+                      <span
+                        className={`text-xs border rounded-full px-2.5 py-0.5 ${STANCE_COLORS[stance]}`}
+                      >
+                        {stance}
+                      </span>
+                    )}
+                    {stock.sector && (
+                      <span className="text-xs bg-bg border border-border rounded-full px-2.5 py-0.5 text-muted">
+                        {stock.sector}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {stance && (
-                    <span className={`text-xs border rounded-full px-2.5 py-0.5 ${STANCE_COLORS[stance]}`}>
-                      {stance}
-                    </span>
-                  )}
-                  {stock.sector && (
-                    <span className="text-xs bg-bg border border-border rounded-full px-2.5 py-0.5 text-muted">
-                      {stock.sector}
-                    </span>
-                  )}
+                <div className="flex gap-4 mt-4 text-xs text-muted">
+                  <span>{stock._count.claims} claims</span>
+                  <span>{stock._count.files} files</span>
+                  <span>{stock._count.entries} notes</span>
                 </div>
-              </div>
-              <div className="flex gap-4 mt-4 text-xs text-muted">
-                <span>{stock._count.claims} claims</span>
-                <span>{stock._count.files} files</span>
-                <span>{stock._count.entries} notes</span>
-              </div>
-            </Link>
-          )})}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

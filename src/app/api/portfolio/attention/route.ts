@@ -5,10 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(req: NextRequest) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    return NextResponse.json(
-      { error: "DEEPSEEK_API_KEY not configured" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "DEEPSEEK_API_KEY not configured" }, { status: 500 });
   }
 
   const body = await req.json().catch(() => ({}));
@@ -37,9 +34,7 @@ export async function POST(req: NextRequest) {
     for (const c of s.claims) counts[c.status as keyof typeof counts]++;
 
     const daysSince = s.lastSummaryAt
-      ? Math.floor(
-          (Date.now() - new Date(s.lastSummaryAt).getTime()) / (1000 * 60 * 60 * 24)
-        )
+      ? Math.floor((Date.now() - new Date(s.lastSummaryAt).getTime()) / (1000 * 60 * 60 * 24))
       : null;
 
     return {
@@ -65,10 +60,6 @@ export async function POST(req: NextRequest) {
 
 function parseStance(summary: string | null): string | null {
   if (!summary) return null;
-  const match = summary.match(
-    /\*\*Stance\*\*[:\s]*.*?(Bullish|Bearish|Neutral)/i
-  );
-  return match
-    ? match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()
-    : null;
+  const match = summary.match(/\*\*Stance\*\*[:\s]*.*?(Bullish|Bearish|Neutral)/i);
+  return match ? match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase() : null;
 }

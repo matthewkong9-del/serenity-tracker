@@ -30,46 +30,34 @@ export function RecentActivity({ timeline }: RecentActivityProps) {
               item.type === "file"
                 ? "border-blue-400 bg-blue-400/20"
                 : item.type === "relationship"
-                ? "border-purple-400 bg-purple-400/20"
-                : "border-accent bg-accent/20";
+                  ? "border-purple-400 bg-purple-400/20"
+                  : "border-accent bg-accent/20";
 
             const label =
-              item.type === "file"
-                ? "File"
-                : item.type === "relationship"
-                ? "Relation"
-                : "Note";
+              item.type === "file" ? "File" : item.type === "relationship" ? "Relation" : "Note";
 
             const labelColor =
               item.type === "file"
                 ? "text-blue-400"
                 : item.type === "relationship"
-                ? "text-purple-400"
-                : "text-accent";
+                  ? "text-purple-400"
+                  : "text-accent";
 
             const mainText =
               item.type === "file"
                 ? item.data.originalName
                 : item.type === "relationship"
-                ? item.data.target
-                : item.data.title || item.data.content.slice(0, 80);
+                  ? item.data.target
+                  : item.data.title || item.data.content.slice(0, 80);
 
             return (
               <div key={i} className="relative">
-                <div
-                  className={`absolute -left-[23px] w-2.5 h-2.5 rounded-full border ${color}`}
-                />
+                <div className={`absolute -left-[23px] w-2.5 h-2.5 rounded-full border ${color}`} />
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs uppercase ${labelColor}`}>
-                    {label}
-                  </span>
-                  <span className="text-muted text-xs">
-                    {timeAgo(item.date)}
-                  </span>
+                  <span className={`text-xs uppercase ${labelColor}`}>{label}</span>
+                  <span className="text-muted text-xs">{timeAgo(item.date)}</span>
                 </div>
-                <p className="text-fg/70 text-sm truncate mt-0.5">
-                  {mainText}
-                </p>
+                <p className="text-fg/70 text-sm truncate mt-0.5">{mainText}</p>
               </div>
             );
           })}

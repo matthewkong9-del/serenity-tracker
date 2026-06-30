@@ -2,10 +2,7 @@ import { runExtractions } from "@/lib/relationships";
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function POST(_req: NextRequest, { params }: { params: { ticker: string } }) {
   const ticker = params.ticker.toUpperCase();
   const apiKey = process.env.DEEPSEEK_API_KEY;
 
@@ -21,10 +18,7 @@ export async function POST(
   }
 }
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function DELETE(_req: NextRequest, { params }: { params: { ticker: string } }) {
   try {
     await prisma.stock.update({
       where: { ticker: params.ticker.toUpperCase() },

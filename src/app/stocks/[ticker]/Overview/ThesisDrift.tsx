@@ -16,10 +16,26 @@ interface ThesisDriftProps {
 }
 
 const DIRECTION_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-  strengthening: { label: "Strengthening", color: "text-emerald-400 border-emerald-400/30 bg-emerald-400/10", icon: "↑" },
-  weakening: { label: "Weakening", color: "text-red-400 border-red-400/30 bg-red-400/10", icon: "↓" },
-  holding: { label: "Holding", color: "text-amber-400 border-amber-400/30 bg-amber-400/10", icon: "→" },
-  unclear: { label: "Unclear", color: "text-slate-400 border-slate-400/30 bg-slate-400/10", icon: "?" },
+  strengthening: {
+    label: "Strengthening",
+    color: "text-emerald-400 border-emerald-400/30 bg-emerald-400/10",
+    icon: "↑",
+  },
+  weakening: {
+    label: "Weakening",
+    color: "text-red-400 border-red-400/30 bg-red-400/10",
+    icon: "↓",
+  },
+  holding: {
+    label: "Holding",
+    color: "text-amber-400 border-amber-400/30 bg-amber-400/10",
+    icon: "→",
+  },
+  unclear: {
+    label: "Unclear",
+    color: "text-slate-400 border-slate-400/30 bg-slate-400/10",
+    icon: "?",
+  },
 };
 
 const CONFIDENCE_COLORS: Record<string, string> = {
@@ -66,10 +82,7 @@ export function ThesisDrift({ summary, ticker, resolvedClaimCount }: ThesisDrift
         </h2>
         <div className="flex items-center gap-2">
           {drift && !loading && (
-            <button
-              onClick={() => setDrift(null)}
-              className="text-accent text-xs hover:underline"
-            >
+            <button onClick={() => setDrift(null)} className="text-accent text-xs hover:underline">
               Re-check
             </button>
           )}
@@ -114,8 +127,7 @@ export function ThesisDrift({ summary, ticker, resolvedClaimCount }: ThesisDrift
                 DIRECTION_CONFIG[drift.direction].color
               }`}
             >
-              {DIRECTION_CONFIG[drift.direction].icon}{" "}
-              {DIRECTION_CONFIG[drift.direction].label}
+              {DIRECTION_CONFIG[drift.direction].icon} {DIRECTION_CONFIG[drift.direction].label}
             </span>
             <span className={`text-xs ${CONFIDENCE_COLORS[drift.confidence]}`}>
               {drift.confidence} confidence
@@ -137,19 +149,16 @@ export function ThesisDrift({ summary, ticker, resolvedClaimCount }: ThesisDrift
               {expanded && (
                 <div className="mt-3 space-y-2">
                   {drift.shifts.map((s, i) => (
-                    <div
-                      key={i}
-                      className="bg-bg rounded-lg p-3 border border-border"
-                    >
+                    <div key={i} className="bg-bg rounded-lg p-3 border border-border">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-xs border rounded-full px-2 py-0.5 ${STATUS_COLORS[s.status] || "text-muted"} bg-bg`}>
+                        <span
+                          className={`text-xs border rounded-full px-2 py-0.5 ${STATUS_COLORS[s.status] || "text-muted"} bg-bg`}
+                        >
                           {s.status}
                         </span>
                       </div>
                       <p className="text-fg/70 text-xs line-clamp-2">{s.claim}</p>
-                      <p className="text-muted/70 text-xs mt-1 italic">
-                        {s.impact}
-                      </p>
+                      <p className="text-muted/70 text-xs mt-1 italic">{s.impact}</p>
                     </div>
                   ))}
                 </div>

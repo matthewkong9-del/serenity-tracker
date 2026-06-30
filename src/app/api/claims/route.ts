@@ -43,17 +43,19 @@ export async function GET(req: NextRequest) {
   const counts = await prisma.claim.groupBy({
     by: ["status"],
     _count: { status: true },
-    where: tweetId ? { tweetId: parseInt(tweetId) } : search
-      ? {
-          OR: [
-            { text: { contains: search } },
-            { evidence: { contains: search } },
-            { source: { contains: search } },
-            { stock: { ticker: { contains: search.toUpperCase() } } },
-            { stock: { name: { contains: search } } },
-          ],
-        }
-      : {},
+    where: tweetId
+      ? { tweetId: parseInt(tweetId) }
+      : search
+        ? {
+            OR: [
+              { text: { contains: search } },
+              { evidence: { contains: search } },
+              { source: { contains: search } },
+              { stock: { ticker: { contains: search.toUpperCase() } } },
+              { stock: { name: { contains: search } } },
+            ],
+          }
+        : {},
   });
 
   const statusCounts: Record<string, number> = {

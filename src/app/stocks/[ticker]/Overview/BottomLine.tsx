@@ -16,17 +16,13 @@ export function BottomLine({ summary }: BottomLineProps) {
         <h2 className="text-xs text-muted uppercase tracking-wider font-semibold mb-3">
           📋 Bottom Line
         </h2>
-        <p className="text-muted text-xs">
-          Run a summary to see the bottom line.
-        </p>
+        <p className="text-muted text-xs">Run a summary to see the bottom line.</p>
       </div>
     );
   }
 
   // Extract "## Bottom Line" section
-  const bottomMatch = summary.match(
-    /## Bottom Line\s*\n+([\s\S]*?)(?=\n##|\n#|$)/
-  );
+  const bottomMatch = summary.match(/## Bottom Line\s*\n+([\s\S]*?)(?=\n##|\n#|$)/);
   const bottomLine = bottomMatch
     ? bottomMatch[1].trim()
     : summary.split("\n\n").pop()?.trim() || "";

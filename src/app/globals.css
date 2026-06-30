@@ -7,11 +7,15 @@ body {
   color: #e5e5e5;
 }
 
-input, textarea, select {
+input,
+textarea,
+select {
   outline: none;
 }
 
-input:focus, textarea:focus, select:focus {
+input:focus,
+textarea:focus,
+select:focus {
   border-color: #22c55e !important;
 }
 

@@ -41,9 +41,7 @@ export async function verifyClaim(
   // 2. Feed results to DeepSeek for verdict
   const context = searchResults
     .map((r, i) => {
-      const highlights = r.highlights?.length
-        ? `\nKey excerpts: ${r.highlights.join(" | ")}`
-        : "";
+      const highlights = r.highlights?.length ? `\nKey excerpts: ${r.highlights.join(" | ")}` : "";
       return `[Source ${i + 1}]\nTitle: ${r.title}\nURL: ${r.url}\nContent: ${r.text.slice(0, 3000)}${highlights}`;
     })
     .join("\n\n");
@@ -78,11 +76,7 @@ Rules:
 - Only include sources you actually used. 1-3 sources max.
 - Be honest about uncertainty. "Unresolved" is better than a wrong verdict.`;
 
-  return chatJson<Verdict>(
-    [{ role: "user", content: prompt }],
-    deepseekKey,
-    { temperature: 0.1 }
-  );
+  return chatJson<Verdict>([{ role: "user", content: prompt }], deepseekKey, { temperature: 0.1 });
 }
 
 /**
@@ -127,10 +121,7 @@ export async function verifyClaims(
 }
 
 /** Call Exa /search API. Returns up to 5 results with full page text. */
-async function exaSearch(
-  query: string,
-  apiKey: string
-): Promise<ExaSearchResult[]> {
+async function exaSearch(query: string, apiKey: string): Promise<ExaSearchResult[]> {
   const res = await fetch("https://api.exa.ai/search", {
     method: "POST",
     headers: {

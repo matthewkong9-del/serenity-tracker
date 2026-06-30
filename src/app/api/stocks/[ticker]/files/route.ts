@@ -7,10 +7,7 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function GET(_req: NextRequest, { params }: { params: { ticker: string } }) {
   const stock = await prisma.stock.findUnique({
     where: { ticker: params.ticker.toUpperCase() },
     include: { files: { orderBy: { createdAt: "desc" } } },
@@ -19,10 +16,7 @@ export async function GET(
   return NextResponse.json(stock.files);
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function POST(req: NextRequest, { params }: { params: { ticker: string } }) {
   const ticker = params.ticker.toUpperCase();
   const stock = await prisma.stock.findUnique({ where: { ticker } });
   if (!stock) return NextResponse.json({ error: "Not found" }, { status: 404 });

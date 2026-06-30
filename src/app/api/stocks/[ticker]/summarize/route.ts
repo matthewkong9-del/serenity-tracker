@@ -2,10 +2,7 @@ import { summarizeStock } from "@/lib/summarize";
 import { runExtractions } from "@/lib/relationships";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { ticker: string } }
-) {
+export async function POST(_req: NextRequest, { params }: { params: { ticker: string } }) {
   const ticker = params.ticker.toUpperCase();
   const apiKey = process.env.DEEPSEEK_API_KEY;
 
