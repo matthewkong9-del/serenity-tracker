@@ -68,8 +68,9 @@ model Claim {
   tweet     Tweet?   @relation(fields: [tweetId], references: [id], onDelete: SetNull)
   text      String
   source    String?
-  status    String   @default("unverified")
-  evidence  String?
+  status     String   @default("unverified")
+  evidence   String?
+  confidence Int?     // 1-5 LLM self-rating during extraction (null = not rated)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

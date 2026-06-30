@@ -14,7 +14,7 @@ async function extractClaimsFromTweet(
   apiKey: string
 ): Promise<{
   tickers: { symbol: string; name?: string; sector?: string }[];
-  claims: { ticker: string; text: string }[];
+  claims: { ticker: string; text: string; confidence: number }[];
   concepts: { name: string; description?: string; category?: string }[];
 }> {
   const prompt = `You are an investment research assistant. Analyze this tweet/thread from a smart investor named "Serenity" (@aleaboreddit).
@@ -40,6 +40,13 @@ Your job: extract structured data for a due diligence system.
    - "NASDAQ listing actively on their radar"
    - "WUS owns 11.26% of WUS Kunshan worth $4.42B"
 
+   For each claim, SELF-RATE your confidence that the claim is accurately extracted (1-5):
+   - 5 = directly quoted or near-exact paraphrase from the tweet, clear ticker attribution
+   - 4 = strong evidence in the tweet, minor ambiguity
+   - 3 = reasonable inference but some ambiguity in wording or ticker
+   - 2 = speculative reading, multiple interpretations possible
+   - 1 = very uncertain — could easily be wrong
+
 3. **Concepts**: Extract key technologies, supply chain relationships, investment themes, and other notable concepts. These are NOT stocks — they are the ideas, technologies, and dynamics that connect everything. Include:
    - Technologies ("Silicon Photonics", "HBM", "CW Laser", "InP Substrates", "Glass substrates")
    - Supply chain dynamics ("OSAT consolidation", "China export controls", "NVIDIA supply chain")
@@ -53,7 +60,7 @@ Return ONLY valid JSON, no markdown, no explanation:
     {"symbol": "LPKF", "name": "LPKF Laser & Electronics", "sector": "Semiconductor Equipment"}
   ],
   "claims": [
-    {"ticker": "LPKF", "text": "80% of major global players selected LPKF equipment"}
+    {"ticker": "LPKF", "text": "80% of major global players selected LPKF equipment", "confidence": 5}
   ],
   "concepts": [
     {"name": "Silicon Photonics", "description": "Photonic integrated circuit technology for optical interconnects", "category": "Technology"}
@@ -68,7 +75,7 @@ ${content.slice(0, 8000)}`;
 
   return chatJson<{
     tickers: { symbol: string; name?: string; sector?: string }[];
-    claims: { ticker: string; text: string }[];
+    claims: { ticker: string; text: string; confidence: number }[];
     concepts: { name: string; description?: string; category?: string }[];
   }>([{ role: "user", content: prompt }], apiKey);
 }
@@ -207,6 +214,7 @@ export async function POST(req: NextRequest) {
             stockId: stock.id,
             tweetId: tweet.id,
             text: c.text,
+            confidence: c.confidence,
             source: row.timestamp
               ? `Serenity tweet ${new Date(row.timestamp).toLocaleDateString()}`
               : "Serenity tweet",

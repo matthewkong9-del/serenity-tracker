@@ -957,6 +957,17 @@ export default function StockPage() {
                       >
                         {claim.status}
                       </button>
+                      {/* Low-confidence extraction warning */}
+                      {"confidence" in claim &&
+                        (claim as any).confidence != null &&
+                        (claim as any).confidence <= 2 && (
+                          <span
+                            className="text-xs bg-yellow-900/30 text-yellow-400 border border-yellow-700 rounded-full px-2 py-0.5 whitespace-nowrap mt-0.5"
+                            title={`AI confidence: ${(claim as any).confidence}/5 — may be inaccurate`}
+                          >
+                            ⚠️ low conf
+                          </span>
+                        )}
                       <div className="flex-1 min-w-0">
                         <p className="text-fg text-sm">{claim.text}</p>
                         <div className="flex items-center gap-3 mt-1.5">
