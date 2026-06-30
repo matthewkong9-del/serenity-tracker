@@ -9,7 +9,7 @@ interface ExaSearchResult {
 
 interface Verdict {
   verdict: "supported" | "refuted" | "disputed" | "unresolved";
-  confidence: "high" | "medium" | "low";
+  verificationConfidence: "high" | "medium" | "low";
   summary: string;
   sources: { url: string; title: string; snippet: string }[];
   corroboratingSources: number;
@@ -32,7 +32,7 @@ export async function verifyClaim(
   if (searchResults.length === 0) {
     return {
       verdict: "unresolved",
-      confidence: "low",
+      verificationConfidence: "low",
       summary:
         "No relevant sources found on the web. Try a broader claim or add evidence manually.",
       sources: [],
@@ -59,7 +59,7 @@ ${context}
 Return ONLY valid JSON, no markdown:
 {
   "verdict": "supported" | "refuted" | "disputed" | "unresolved",
-  "confidence": "high" | "medium" | "low",
+  "verificationConfidence": "high" | "medium" | "low",
   "summary": "2-3 sentences explaining the verdict with specific data points from the sources. Include numbers and dates where available.",
   "corroboratingSources": 0,
   "sources": [
@@ -122,7 +122,7 @@ export async function verifyClaims(
       } else {
         results.set(claims[i + batchResults.indexOf(r)]?.id ?? 0, {
           verdict: "unresolved",
-          confidence: "low",
+          verificationConfidence: "low",
           summary: `Verification error: ${r.reason?.message || "Unknown"}`,
           sources: [],
           corroboratingSources: 0,

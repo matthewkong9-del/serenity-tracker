@@ -5,6 +5,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    env: {
+      DATABASE_URL: "file:../data/tracker.db",
+    },
   },
   resolve: {
     alias: {

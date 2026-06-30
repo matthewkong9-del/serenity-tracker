@@ -6,7 +6,7 @@ interface RelationshipExtract {
   target: string;
   description?: string;
   sources?: string;
-  confidence: "confirmed" | "speculative" | "gap";
+  sourceConfidence: "confirmed" | "speculative" | "gap";
 }
 
 async function buildContextForStock(ticker: string): Promise<string | null> {
@@ -14,7 +14,7 @@ async function buildContextForStock(ticker: string): Promise<string | null> {
     where: { ticker },
     include: {
       files: { select: { originalName: true, fileType: true, markdown: true } },
-      entries: { select: { title: true, content: true, tag: true } },
+      notes: { select: { title: true, content: true, tag: true } },
       claims: {
         select: {
           text: true,
@@ -75,9 +75,9 @@ async function buildContextForStock(ticker: string): Promise<string | null> {
   }
 
   // Notes
-  if (stock.entries.length > 0) {
+  if (stock.notes.length > 0) {
     sections.push("--- NOTES ---");
-    for (const e of stock.entries) {
+    for (const e of stock.notes) {
       const header = e.tag ? `[${e.tag}]` : "";
       if (e.title) sections.push(`${header} ${e.title}`);
       if (e.content) sections.push(e.content);
@@ -218,7 +218,7 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
 
   // Replace only map-section relationships
   await prisma.relationship.deleteMany({
-    where: { stockId: stock.id, section: "map" },
+    where: { stockId: stock.id, section: "known" },
   });
 
   await prisma.relationship.createMany({
@@ -228,10 +228,10 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
       target: (r.target || "Unknown").trim().slice(0, 200),
       description: r.description?.trim()?.slice(0, 500) || null,
       sources: r.sources?.trim()?.slice(0, 500) || null,
-      confidence: ["confirmed", "speculative", "gap"].includes(r.confidence)
-        ? r.confidence
+      confidence: ["confirmed", "speculative", "gap"].includes(r.sourceConfidence)
+        ? r.sourceConfidence
         : "speculative",
-      section: "map",
+      section: "known",
     })),
   });
 }
@@ -263,8 +263,8 @@ export async function extractContrarianAngles(ticker: string, apiKey: string): P
       target: (a.target || "Unknown").trim().slice(0, 200),
       description: a.description?.trim()?.slice(0, 500) || null,
       sources: a.sources?.trim()?.slice(0, 500) || null,
-      confidence: ["confirmed", "speculative", "gap"].includes(a.confidence)
-        ? a.confidence
+      confidence: ["confirmed", "speculative", "gap"].includes(a.sourceConfidence)
+        ? a.sourceConfidence
         : "speculative",
       section: "contrarian",
     })),

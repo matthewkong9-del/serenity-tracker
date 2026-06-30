@@ -10,7 +10,7 @@ export async function POST() {
   }
 
   const stocks = await prisma.stock.findMany({
-    include: { files: true, entries: true, claims: true },
+    include: { files: true, notes: true, claims: true },
   });
 
   const stale = stocks.filter(needsSummary);

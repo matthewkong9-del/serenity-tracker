@@ -366,7 +366,9 @@ export async function generateResearchPlan(
         where: { status: "unverified" },
         select: { id: true, text: true },
       },
-      relationships: { select: { type: true, target: true, description: true, confidence: true } },
+      relationships: {
+        select: { type: true, target: true, description: true, sourceConfidence: true },
+      },
     },
   });
 
@@ -393,7 +395,7 @@ export async function generateResearchPlan(
   if (stock.relationships.length > 0) {
     contextParts.push(`\nRelationships (${stock.relationships.length}):`);
     for (const r of stock.relationships) {
-      contextParts.push(`- [${r.confidence}] ${r.type}: ${r.target}`);
+      contextParts.push(`- [${r.sourceConfidence}] ${r.type}: ${r.target}`);
     }
   }
 

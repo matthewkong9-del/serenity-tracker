@@ -214,7 +214,7 @@ export async function POST(req: NextRequest) {
             stockId: stock.id,
             tweetId: tweet.id,
             text: c.text,
-            confidence: c.confidence,
+            extractionConfidence: c.confidence,
             source: row.timestamp
               ? `Serenity tweet ${new Date(row.timestamp).toLocaleDateString()}`
               : "Serenity tweet",

@@ -251,11 +251,11 @@ export default function ClaimsContent() {
                   {claim.status}
                 </button>
                 {"confidence" in claim &&
-                  (claim as any).confidence != null &&
-                  (claim as any).confidence <= 2 && (
+                  (claim as any).extractionConfidence != null &&
+                  (claim as any).extractionConfidence <= 2 && (
                     <span
                       className="text-xs bg-yellow-900/30 text-yellow-400 border border-yellow-700 rounded-full px-2 py-0.5 whitespace-nowrap mt-0.5"
-                      title={`AI extraction confidence: ${(claim as any).confidence}/5 — may be inaccurate`}
+                      title={`AI extraction confidence: ${(claim as any).extractionConfidence}/5 — may be inaccurate`}
                     >
                       ⚠️ low conf
                     </span>

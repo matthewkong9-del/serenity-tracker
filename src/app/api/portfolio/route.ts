@@ -15,7 +15,7 @@ export async function GET() {
         select: { status: true },
       },
       _count: {
-        select: { files: true, entries: true },
+        select: { files: true, notes: true },
       },
     },
     orderBy: { updatedAt: "desc" },
@@ -44,7 +44,7 @@ export async function GET() {
       updatedAt: s.updatedAt,
       claimCounts: counts,
       fileCount: s._count.files,
-      entryCount: s._count.entries,
+      entryCount: s._count.notes,
     };
   });
 

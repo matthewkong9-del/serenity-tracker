@@ -48,7 +48,7 @@ One sentence. What's proven vs what's speculation. Should the user dig deeper or
 interface StockWithData {
   ticker: string;
   files: { originalName: string; fileType: string; markdown: string | null }[];
-  entries: { title: string | null; content: string; tag: string | null }[];
+  notes: { title: string | null; content: string; tag: string | null }[];
   claims: {
     text: string;
     source: string | null;
@@ -103,9 +103,9 @@ async function buildContext(stock: StockWithData): Promise<string> {
   }
 
   // 4. Notes
-  if (stock.entries.length > 0) {
+  if (stock.notes.length > 0) {
     sections.push("--- NOTES (user's own research) ---");
-    for (const entry of stock.entries) {
+    for (const entry of stock.notes) {
       if (entry.tag) sections.push(`[Tag: ${entry.tag}]`);
       if (entry.title) sections.push(`Title: ${entry.title}`);
       sections.push(`${entry.content}`);
@@ -120,7 +120,7 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
     where: { ticker },
     include: {
       files: true,
-      entries: true,
+      notes: true,
       claims: {
         include: { tweet: { select: { content: true, timestamp: true } } },
         orderBy: { createdAt: "desc" },
@@ -158,13 +158,13 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
 export function needsSummary(stock: {
   lastSummaryAt: Date | null;
   files: { createdAt: Date }[];
-  entries: { createdAt: Date }[];
+  notes: { createdAt: Date }[];
   claims: { createdAt: Date }[];
 }): boolean {
   if (!stock.lastSummaryAt) return true;
   return (
     stock.files.some((f) => new Date(f.createdAt) > new Date(stock.lastSummaryAt!)) ||
-    stock.entries.some((e) => new Date(e.createdAt) > new Date(stock.lastSummaryAt!)) ||
+    stock.notes.some((e) => new Date(e.createdAt) > new Date(stock.lastSummaryAt!)) ||
     stock.claims.some((c) => new Date(c.createdAt) > new Date(stock.lastSummaryAt!))
   );
 }

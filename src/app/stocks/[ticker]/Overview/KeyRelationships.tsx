@@ -5,7 +5,7 @@ interface Relationship {
   type: string;
   target: string;
   description: string | null;
-  confidence: string;
+  sourceConfidence: string;
   section: string;
 }
 
@@ -43,8 +43,8 @@ export function KeyRelationships({ relationships, onViewAll }: KeyRelationshipsP
   const sorted = [...mapRels].sort((a, b) => {
     const order = { confirmed: 0, speculative: 1, gap: 2 };
     return (
-      (order[a.confidence as keyof typeof order] ?? 3) -
-      (order[b.confidence as keyof typeof order] ?? 3)
+      (order[a.sourceConfidence as keyof typeof order] ?? 3) -
+      (order[b.sourceConfidence as keyof typeof order] ?? 3)
     );
   });
 
@@ -83,15 +83,15 @@ export function KeyRelationships({ relationships, onViewAll }: KeyRelationshipsP
             {sorted.slice(0, 5).map((r) => (
               <div key={r.id} className="flex items-start gap-2">
                 <span
-                  className={`w-2 h-2 rounded-full border mt-1.5 shrink-0 ${confidenceDot(r.confidence)}`}
+                  className={`w-2 h-2 rounded-full border mt-1.5 shrink-0 ${confidenceDot(r.sourceConfidence)}`}
                 />
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-fg text-sm font-medium truncate">{r.target}</span>
                     <span
-                      className={`text-[10px] border rounded-full px-1.5 py-0.5 ${confidenceBadge(r.confidence)}`}
+                      className={`text-[10px] border rounded-full px-1.5 py-0.5 ${confidenceBadge(r.sourceConfidence)}`}
                     >
-                      {confidenceLabel(r.confidence)}
+                      {confidenceLabel(r.sourceConfidence)}
                     </span>
                   </div>
                   {r.description && (

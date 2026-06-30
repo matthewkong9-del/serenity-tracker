@@ -11,7 +11,7 @@ export async function GET() {
       sector: true,
       summary: true,
       updatedAt: true,
-      _count: { select: { files: true, entries: true, claims: true } },
+      _count: { select: { files: true, notes: true, claims: true } },
     },
   });
   return NextResponse.json(stocks);

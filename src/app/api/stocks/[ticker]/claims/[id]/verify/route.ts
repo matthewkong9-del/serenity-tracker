@@ -38,7 +38,7 @@ export async function POST(
     // Build evidence block
     const evidenceParts: string[] = [];
     evidenceParts.push(
-      `[AI Verification — ${verdict.verdict.toUpperCase()} · ${verdict.confidence} confidence · ${verdict.corroboratingSources} source${verdict.corroboratingSources === 1 ? "" : "s"}]`
+      `[AI Verification — ${verdict.verdict.toUpperCase()} · ${verdict.verificationConfidence} confidence · ${verdict.corroboratingSources} source${verdict.corroboratingSources === 1 ? "" : "s"}]`
     );
     evidenceParts.push(verdict.summary);
     if (verdict.sources.length > 0) {

@@ -28,7 +28,7 @@ interface StockFile {
   createdAt: string;
 }
 
-interface Entry {
+interface Note {
   id: number;
   title: string | null;
   content: string;
@@ -54,7 +54,7 @@ interface Relationship {
   target: string;
   description: string | null;
   sources: string | null;
-  confidence: string;
+  sourceConfidence: string;
   section: string;
   createdAt: string;
 }
@@ -64,12 +64,12 @@ interface Stock {
   ticker: string;
   name: string | null;
   sector: string | null;
-  notes: string | null;
+  generalNotes: string | null;
   summary: string | null;
   lastSummaryAt: string | null;
   extractionError: string | null;
   files: StockFile[];
-  entries: Entry[];
+  notes: Note[];
   claims: Claim[];
   relationships: Relationship[];
 }
@@ -161,7 +161,7 @@ export default function StockPage() {
   const needsSummary = stock
     ? !stock.lastSummaryAt ||
       stock.files.some((f) => new Date(f.createdAt) > new Date(stock.lastSummaryAt!)) ||
-      stock.entries.some((e) => new Date(e.createdAt) > new Date(stock.lastSummaryAt!)) ||
+      stock.notes.some((e) => new Date(e.createdAt) > new Date(stock.lastSummaryAt!)) ||
       stock.claims.some((c) => new Date(c.createdAt) > new Date(stock.lastSummaryAt!)) ||
       stock.relationships.some((r) => new Date(r.createdAt) > new Date(stock.lastSummaryAt!))
     : false;
@@ -327,7 +327,7 @@ export default function StockPage() {
     load();
   }
 
-  function startEdit(entry: Entry) {
+  function startEdit(entry: Note) {
     setEditingId(entry.id);
     setEditTitle(entry.title || "");
     setEditContent(entry.content);
@@ -388,7 +388,7 @@ export default function StockPage() {
   }
 
   const existingTags = Array.from(
-    new Set(stock.entries.map((e) => e.tag).filter(Boolean))
+    new Set(stock.notes.map((e) => e.tag).filter(Boolean))
   ) as string[];
 
   const isImage = (type: string) => ["jpg", "jpeg", "png", "gif", "webp"].includes(type);
@@ -396,7 +396,7 @@ export default function StockPage() {
 
   const timeline = [
     ...stock.files.map((f) => ({ type: "file" as const, date: f.createdAt, data: f })),
-    ...stock.entries.map((e) => ({ type: "entry" as const, date: e.createdAt, data: e })),
+    ...stock.notes.map((e) => ({ type: "entry" as const, date: e.createdAt, data: e })),
     ...stock.relationships.map((r) => ({
       type: "relationship" as const,
       date: r.createdAt,
@@ -451,7 +451,7 @@ export default function StockPage() {
             onClick={() => setTab(t)}
             className={`px-4 py-2.5 text-sm capitalize border-b-2 transition ${tab === t ? "border-accent text-accent" : "border-transparent text-muted hover:text-fg"}`}
           >
-            {t === "relationships" ? "Map" : t === "overview" ? "Overview" : t}{" "}
+            {t === "relationships" ? "Relationships" : t === "overview" ? "Overview" : t}{" "}
             {t === "overview"
               ? ""
               : t === "all"
@@ -459,7 +459,7 @@ export default function StockPage() {
                 : t === "files"
                   ? `(${stock.files.length})`
                   : t === "notes"
-                    ? `(${stock.entries.length})`
+                    ? `(${stock.notes.length})`
                     : t === "claims"
                       ? `(${stock.claims.length})`
                       : `(${stock.relationships.length})`}
@@ -671,10 +671,10 @@ export default function StockPage() {
       {/* Tab: Notes */}
       {tab === "notes" && (
         <div>
-          {stock.notes && (
+          {stock.generalNotes && (
             <div className="bg-surface border border-border rounded-xl p-5 mb-6">
               <p className="text-xs text-muted mb-2 uppercase tracking-wide">General Notes</p>
-              <p className="text-fg text-sm whitespace-pre-wrap">{stock.notes}</p>
+              <p className="text-fg text-sm whitespace-pre-wrap">{stock.generalNotes}</p>
             </div>
           )}
 
@@ -739,11 +739,11 @@ export default function StockPage() {
             </div>
           )}
 
-          {stock.entries.length === 0 ? (
+          {stock.notes.length === 0 ? (
             <p className="text-muted text-center py-10">No notes yet</p>
           ) : (
             <div className="space-y-4">
-              {stock.entries.map((entry) => (
+              {stock.notes.map((entry) => (
                 <div key={entry.id} className="bg-surface border border-border rounded-xl p-5">
                   {editingId === entry.id ? (
                     <div className="space-y-3">
@@ -959,11 +959,11 @@ export default function StockPage() {
                       </button>
                       {/* Low-confidence extraction warning */}
                       {"confidence" in claim &&
-                        (claim as any).confidence != null &&
-                        (claim as any).confidence <= 2 && (
+                        (claim as any).extractionConfidence != null &&
+                        (claim as any).extractionConfidence <= 2 && (
                           <span
                             className="text-xs bg-yellow-900/30 text-yellow-400 border border-yellow-700 rounded-full px-2 py-0.5 whitespace-nowrap mt-0.5"
-                            title={`AI confidence: ${(claim as any).confidence}/5 — may be inaccurate`}
+                            title={`AI confidence: ${(claim as any).extractionConfidence}/5 — may be inaccurate`}
                           >
                             ⚠️ low conf
                           </span>
@@ -1039,19 +1039,20 @@ export default function StockPage() {
               <p className="text-xs text-muted">
                 {
                   stock.relationships.filter(
-                    (r) => r.section === "map" && r.confidence === "confirmed"
+                    (r) => r.section === "known" && r.sourceConfidence === "confirmed"
                   ).length
                 }{" "}
                 confirmed ·{" "}
                 {
                   stock.relationships.filter(
-                    (r) => r.section === "map" && r.confidence === "speculative"
+                    (r) => r.section === "known" && r.sourceConfidence === "speculative"
                   ).length
                 }{" "}
                 speculative ·{" "}
                 {
-                  stock.relationships.filter((r) => r.section === "map" && r.confidence === "gap")
-                    .length
+                  stock.relationships.filter(
+                    (r) => r.section === "known" && r.sourceConfidence === "gap"
+                  ).length
                 }{" "}
                 gaps · {stock.relationships.filter((r) => r.section === "contrarian").length}{" "}
                 contrarian
@@ -1155,10 +1156,10 @@ export default function StockPage() {
                             {items.map((r) => (
                               <div
                                 key={r.id}
-                                className={`relative rounded-lg border p-4 ${confidenceClass(r.confidence)}`}
+                                className={`relative rounded-lg border p-4 ${confidenceClass(r.sourceConfidence)}`}
                               >
                                 <div
-                                  className={`absolute -left-[25px] top-4 w-3 h-3 rounded-full border-2 ${confidenceDot(r.confidence)}`}
+                                  className={`absolute -left-[25px] top-4 w-3 h-3 rounded-full border-2 ${confidenceDot(r.sourceConfidence)}`}
                                 />
 
                                 <div className="flex items-start justify-between gap-3">
@@ -1168,9 +1169,9 @@ export default function StockPage() {
                                         {r.target}
                                       </span>
                                       <span
-                                        className={`text-[10px] border rounded-full px-2 py-0.5 ${confidenceBadge(r.confidence)}`}
+                                        className={`text-[10px] border rounded-full px-2 py-0.5 ${confidenceBadge(r.sourceConfidence)}`}
                                       >
-                                        {confidenceLabel(r.confidence)}
+                                        {confidenceLabel(r.sourceConfidence)}
                                       </span>
                                     </div>
                                     {r.description && (

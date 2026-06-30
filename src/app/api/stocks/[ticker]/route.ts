@@ -6,7 +6,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ticker: str
     where: { ticker: params.ticker.toUpperCase() },
     include: {
       files: { orderBy: { createdAt: "desc" } },
-      entries: { orderBy: { createdAt: "desc" } },
+      notes: { orderBy: { createdAt: "desc" } },
       claims: { orderBy: { createdAt: "desc" } },
       relationships: { orderBy: { createdAt: "desc" } },
     },
@@ -29,7 +29,7 @@ export async function PUT(req: NextRequest, { params }: { params: { ticker: stri
       data: {
         name: name?.trim() || null,
         sector: sector?.trim() || null,
-        notes: notes?.trim() || null,
+        generalNotes: notes?.trim() || null,
       },
     });
     return NextResponse.json(stock);

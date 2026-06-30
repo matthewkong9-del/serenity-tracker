@@ -24,7 +24,7 @@ export default function EditStock() {
       .then((s) => {
         setName(s.name || "");
         setSector(s.sector || "");
-        setNotes(s.notes || "");
+        setNotes(s.generalNotes || "");
         setLoading(false);
       })
       .catch(() => router.push("/"));

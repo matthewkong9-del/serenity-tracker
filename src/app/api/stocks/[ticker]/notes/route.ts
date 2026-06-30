@@ -4,10 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(_req: NextRequest, { params }: { params: { ticker: string } }) {
   const stock = await prisma.stock.findUnique({
     where: { ticker: params.ticker.toUpperCase() },
-    include: { entries: { orderBy: { createdAt: "desc" } } },
+    include: { notes: { orderBy: { createdAt: "desc" } } },
   });
   if (!stock) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(stock.entries);
+  return NextResponse.json(stock.notes);
 }
 
 export async function POST(req: NextRequest, { params }: { params: { ticker: string } }) {
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: { ticker: str
     return NextResponse.json({ error: "Content is required" }, { status: 400 });
   }
 
-  const entry = await prisma.entry.create({
+  const entry = await prisma.note.create({
     data: {
       stockId: stock.id,
       title: title?.trim() || null,

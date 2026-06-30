@@ -11,7 +11,7 @@ interface Stock {
   sector: string | null;
   summary: string | null;
   updatedAt: string;
-  _count: { files: number; entries: number; claims: number };
+  _count: { files: number; notes: number; claims: number };
 }
 
 export default function Home() {
@@ -238,7 +238,7 @@ export default function Home() {
                 <div className="flex gap-4 mt-4 text-xs text-muted">
                   <span>{stock._count.claims} claims</span>
                   <span>{stock._count.files} files</span>
-                  <span>{stock._count.entries} notes</span>
+                  <span>{stock._count.notes} notes</span>
                 </div>
               </Link>
             );

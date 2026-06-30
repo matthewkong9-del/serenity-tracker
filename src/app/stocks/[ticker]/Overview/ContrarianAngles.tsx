@@ -5,7 +5,7 @@ interface Relationship {
   type: string;
   target: string;
   description: string | null;
-  confidence: string;
+  sourceConfidence: string;
   section: string;
 }
 

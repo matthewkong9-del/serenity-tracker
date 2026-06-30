@@ -194,10 +194,10 @@ export default function PortfolioPage() {
         </div>
       </div>
 
-      {/* Maturity Ladder (when decisions exist) */}
+      {/* Decisions */}
       {decisions.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-sm font-semibold text-fg mb-4">Maturity Ladder</h2>
+          <h2 className="text-sm font-semibold text-fg mb-4">Decisions</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {(["beginning", "core", "actionable"] as const).map((m) => (
               <div key={m} className={`border rounded-xl p-4 ${MATURITY_COLORS[m]}`}>

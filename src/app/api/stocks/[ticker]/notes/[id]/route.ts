@@ -9,7 +9,7 @@ export async function PUT(
   const { title, content, tag } = body;
 
   try {
-    const entry = await prisma.entry.update({
+    const entry = await prisma.note.update({
       where: { id: parseInt(params.id) },
       data: {
         title: title?.trim() || null,
@@ -28,7 +28,7 @@ export async function DELETE(
   { params }: { params: { ticker: string; id: string } }
 ) {
   try {
-    await prisma.entry.delete({ where: { id: parseInt(params.id) } });
+    await prisma.note.delete({ where: { id: parseInt(params.id) } });
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

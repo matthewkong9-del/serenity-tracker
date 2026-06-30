@@ -164,7 +164,7 @@ async function main() {
 
   // 6. Low-confidence claims (from extraction self-scoring)
   const lowConfCount = await prisma.claim.count({
-    where: { confidence: { lte: 2 } },
+    where: { extractionConfidence: { lte: 2 } },
   });
   if (lowConfCount > 10) {
     issues.push({
