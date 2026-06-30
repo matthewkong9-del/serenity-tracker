@@ -1,4 +1,5 @@
 import { summarizeStock } from "@/lib/summarize";
+import { runExtractions } from "@/lib/relationships";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(
@@ -14,6 +15,10 @@ export async function POST(
 
   try {
     const summary = await summarizeStock(ticker, apiKey);
+
+    // Re-extract relationships and contrarian angles after new summary
+    runExtractions(ticker, apiKey);
+
     return NextResponse.json({ summary });
   } catch (e: any) {
     if (e.message === "Not found") {

@@ -4,6 +4,15 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import { formatBytes, timeAgo, parseStance, STANCE_COLORS } from "@/lib/db";
+import {
+  StanceCard,
+  ClaimHealth,
+  ResearchPriorities,
+  KeyRelationships,
+  ContrarianAngles,
+  BottomLine,
+  RecentActivity,
+} from "./Overview";
 
 interface StockFile {
   id: number;
@@ -36,6 +45,17 @@ interface Claim {
   updatedAt: string;
 }
 
+interface Relationship {
+  id: number;
+  type: string;
+  target: string;
+  description: string | null;
+  sources: string | null;
+  confidence: string;
+  section: string;
+  createdAt: string;
+}
+
 interface Stock {
   id: number;
   ticker: string;
@@ -44,12 +64,14 @@ interface Stock {
   notes: string | null;
   summary: string | null;
   lastSummaryAt: string | null;
+  extractionError: string | null;
   files: StockFile[];
   entries: Entry[];
   claims: Claim[];
+  relationships: Relationship[];
 }
 
-type Tab = "files" | "notes" | "claims" | "all";
+type Tab = "overview" | "files" | "notes" | "claims" | "relationships" | "all";
 
 const CLAIM_STATUSES = ["unverified", "supported", "refuted", "disputed"] as const;
 
@@ -65,7 +87,8 @@ export default function StockPage() {
   const router = useRouter();
   const ticker = params.ticker as string;
   const [stock, setStock] = useState<Stock | null>(null);
-  const [tab, setTab] = useState<Tab>("all");
+  const [tab, setTab] = useState<Tab>("overview");
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -96,6 +119,13 @@ export default function StockPage() {
   const [editingClaimId, setEditingClaimId] = useState<number | null>(null);
   const [editEvidence, setEditEvidence] = useState("");
 
+  // Claim verification
+  const [verifyingClaimId, setVerifyingClaimId] = useState<number | null>(null);
+
+  // Relationship remapping
+  const [remapping, setRemapping] = useState(false);
+  const [remapError, setRemapError] = useState("");
+
   const load = useCallback(() => {
     fetch(`/api/stocks/${ticker}`)
       .then((r) => {
@@ -113,7 +143,8 @@ export default function StockPage() {
     !stock.lastSummaryAt ||
     stock.files.some(f => new Date(f.createdAt) > new Date(stock.lastSummaryAt!)) ||
     stock.entries.some(e => new Date(e.createdAt) > new Date(stock.lastSummaryAt!)) ||
-    stock.claims.some(c => new Date(c.createdAt) > new Date(stock.lastSummaryAt!))
+    stock.claims.some(c => new Date(c.createdAt) > new Date(stock.lastSummaryAt!)) ||
+    stock.relationships.some(r => new Date(r.createdAt) > new Date(stock.lastSummaryAt!))
     : false;
 
   async function handleSummarize() {
@@ -121,13 +152,44 @@ export default function StockPage() {
     setSummaryError("");
     const res = await fetch(`/api/stocks/${ticker}/summarize`, { method: "POST" });
     setSummarizing(false);
-    
+
     if (res.ok) {
       load(); // Refresh to show new summary and update button state
     } else {
       const data = await res.json();
       setSummaryError(data.error || "Failed to summarize");
     }
+  }
+
+  async function handleReMap() {
+    setRemapping(true);
+    setRemapError("");
+    const res = await fetch(`/api/stocks/${ticker}/relationships`, { method: "POST" });
+    setRemapping(false);
+    if (res.ok) {
+      load();
+    } else {
+      const data = await res.json();
+      setRemapError(data.error || "Failed to remap");
+    }
+  }
+
+  async function dismissExtractionError() {
+    await fetch(`/api/stocks/${ticker}/relationships`, { method: "DELETE" });
+    load();
+  }
+
+  async function handleVerifyClaim(claimId: number) {
+    setVerifyingClaimId(claimId);
+    const res = await fetch(`/api/stocks/${ticker}/claims/${claimId}/verify`, {
+      method: "POST",
+    });
+    setVerifyingClaimId(null);
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "Verification failed");
+    }
+    load();
   }
 
   async function handleUpload(files: FileList | null) {
@@ -262,6 +324,7 @@ export default function StockPage() {
   const timeline = [
     ...stock.files.map((f) => ({ type: "file" as const, date: f.createdAt, data: f })),
     ...stock.entries.map((e) => ({ type: "entry" as const, date: e.createdAt, data: e })),
+    ...stock.relationships.map((r) => ({ type: "relationship" as const, date: r.createdAt, data: r })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
@@ -293,58 +356,66 @@ export default function StockPage() {
         </div>
       </div>
 
-      {/* AI MEMORY BLOCK */}
-      <div className="bg-surface border border-border rounded-xl p-5 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-accent uppercase tracking-wider">🧠 AI Memory</h2>
-          <button
-            onClick={handleSummarize}
-            disabled={summarizing || !needsSummary}
-            className={`text-sm px-4 py-1.5 rounded-lg font-medium transition ${
-              needsSummary 
-                ? "bg-accent text-bg hover:bg-accent/90" 
-                : "bg-bg text-muted border border-border cursor-not-allowed"
-            }`}
-          >
-            {summarizing ? "Analyzing..." : needsSummary ? "Run Summary" : "Up to date ✓"}
-          </button>
-        </div>
-        
-        {summaryError && <p className="text-red-400 text-sm mb-2">{summaryError}</p>}
-
-        {stock.summary ? (
-          <div className="prose prose-invert prose-sm max-w-none text-fg/80 [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_strong]:text-fg [&_li]:mb-1">
-            <ReactMarkdown>{stock.summary}</ReactMarkdown>
-          </div>
-        ) : (
-          <p className="text-muted text-sm">
-            {needsSummary ? "New data available. Click 'Run Summary' to generate." : "Add notes or .md files to generate a summary."}
-          </p>
-        )}
-        
-        {stock.lastSummaryAt && (
-          <p className="text-muted/50 text-xs mt-3 border-t border-border pt-2">
-            Last summarized: {new Date(stock.lastSummaryAt).toLocaleString()}
-          </p>
-        )}
-      </div>
-
-      {/* General Notes */}
-      {stock.notes && (
-        <div className="bg-surface border border-border rounded-xl p-5 mb-6">
-          <p className="text-xs text-muted mb-2 uppercase tracking-wide">General Notes</p>
-          <p className="text-fg text-sm whitespace-pre-wrap">{stock.notes}</p>
-        </div>
-      )}
-
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border mb-6">
-        {(["all", "files", "notes", "claims"] as Tab[]).map((t) => (
+        {(["overview", "all", "files", "notes", "claims", "relationships"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-sm capitalize border-b-2 transition ${tab === t ? "border-accent text-accent" : "border-transparent text-muted hover:text-fg"}`}>
-            {t} {t === "all" ? `(${timeline.length})` : t === "files" ? `(${stock.files.length})` : t === "notes" ? `(${stock.entries.length})` : `(${stock.claims.length})`}
+            {t === "relationships" ? "Map" : t === "overview" ? "Overview" : t} {t === "overview" ? "" : t === "all" ? `(${timeline.length})` : t === "files" ? `(${stock.files.length})` : t === "notes" ? `(${stock.entries.length})` : t === "claims" ? `(${stock.claims.length})` : `(${stock.relationships.length})`}
           </button>
         ))}
       </div>
+
+      {/* Tab: Overview */}
+      {tab === "overview" && (
+        <div className="space-y-6">
+          {/* Row 1: Stance + Claim Health */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <StanceCard
+                summary={stock.summary}
+                lastSummaryAt={stock.lastSummaryAt}
+                needsSummary={needsSummary}
+                summarizing={summarizing}
+                summaryError={summaryError}
+                onSummarize={handleSummarize}
+              />
+            </div>
+            <div>
+              <ClaimHealth
+                claims={stock.claims}
+                currentFilter={statusFilter}
+                onFilterClick={(status) => {
+                  setStatusFilter(status);
+                  setTab("claims");
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Row 2: Research Priorities */}
+          <ResearchPriorities
+            claims={stock.claims}
+            ticker={ticker}
+            onVerify={handleVerifyClaim}
+            verifyingClaimId={verifyingClaimId}
+          />
+
+          {/* Row 3: Key Relationships + Contrarian Angles */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <KeyRelationships
+              relationships={stock.relationships}
+              onViewAll={() => setTab("relationships")}
+            />
+            <ContrarianAngles relationships={stock.relationships} />
+          </div>
+
+          {/* Row 4: Bottom Line */}
+          <BottomLine summary={stock.summary} />
+
+          {/* Row 5: Recent Activity */}
+          <RecentActivity timeline={timeline} />
+        </div>
+      )}
 
       {/* Tab: Files */}
       {tab === "files" && (
@@ -418,6 +489,13 @@ export default function StockPage() {
       {/* Tab: Notes */}
       {tab === "notes" && (
         <div>
+          {stock.notes && (
+            <div className="bg-surface border border-border rounded-xl p-5 mb-6">
+              <p className="text-xs text-muted mb-2 uppercase tracking-wide">General Notes</p>
+              <p className="text-fg text-sm whitespace-pre-wrap">{stock.notes}</p>
+            </div>
+          )}
+
           <button onClick={() => setShowNoteForm(true)} className="bg-accent text-bg px-4 py-2 rounded-lg text-sm font-medium hover:bg-accent/90 transition mb-6">+ Add Note</button>
 
           {showNoteForm && (
@@ -487,11 +565,21 @@ export default function StockPage() {
       {tab === "claims" && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-xs text-muted">
-              {stock.claims.filter((c) => c.status === "supported").length} verified ·{" "}
-              {stock.claims.filter((c) => c.status === "refuted").length} refuted ·{" "}
-              {stock.claims.filter((c) => c.status === "unverified").length} unchecked
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-muted">
+                {stock.claims.filter((c) => c.status === "supported").length} verified ·{" "}
+                {stock.claims.filter((c) => c.status === "refuted").length} refuted ·{" "}
+                {stock.claims.filter((c) => c.status === "unverified").length} unchecked
+              </p>
+              {statusFilter && (
+                <button
+                  onClick={() => setStatusFilter(null)}
+                  className="text-xs text-accent hover:underline"
+                >
+                  Clear filter
+                </button>
+              )}
+            </div>
           </div>
 
           {stock.claims.length === 0 ? (
@@ -500,7 +588,9 @@ export default function StockPage() {
             </p>
           ) : (
             <div className="space-y-3">
-              {stock.claims.map((claim) => (
+              {stock.claims
+                .filter((c) => !statusFilter || c.status === statusFilter)
+                .map((claim) => (
                 <div key={claim.id} className="bg-surface border border-border rounded-xl p-4">
                   <div className="flex items-start gap-3">
                     <button
@@ -521,6 +611,17 @@ export default function StockPage() {
                           className="text-muted hover:text-fg text-xs transition"
                         >
                           {claim.evidence ? "Edit evidence" : "+ Add evidence"}
+                        </button>
+                        <button
+                          onClick={() => handleVerifyClaim(claim.id)}
+                          disabled={verifyingClaimId === claim.id}
+                          className={`text-xs px-2.5 py-1 rounded border transition ${
+                            verifyingClaimId === claim.id
+                              ? "border-border text-muted cursor-wait"
+                              : "border-accent/30 text-accent hover:bg-accent/10"
+                          }`}
+                        >
+                          {verifyingClaimId === claim.id ? "Verifying..." : "🔍 Verify"}
                         </button>
                       </div>
 
@@ -562,6 +663,183 @@ export default function StockPage() {
         </div>
       )}
 
+      {/* Tab: Relationships (Mind Map) */}
+      {tab === "relationships" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-xs text-muted">
+                {stock.relationships.filter((r) => r.section === "map" && r.confidence === "confirmed").length} confirmed ·{" "}
+                {stock.relationships.filter((r) => r.section === "map" && r.confidence === "speculative").length} speculative ·{" "}
+                {stock.relationships.filter((r) => r.section === "map" && r.confidence === "gap").length} gaps ·{" "}
+                {stock.relationships.filter((r) => r.section === "contrarian").length} contrarian
+              </p>
+            </div>
+            <button
+              onClick={handleReMap}
+              disabled={remapping}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                stock.relationships.length === 0
+                  ? "bg-accent text-bg hover:bg-accent/90"
+                  : "border border-border text-muted hover:text-fg hover:border-fg/30"
+              } disabled:opacity-50`}
+            >
+              {remapping ? "Mapping..." : stock.relationships.length === 0 ? "Map Relationships" : "Re-map"}
+            </button>
+          </div>
+
+          {remapError && <p className="text-red-400 text-xs mb-3">{remapError}</p>}
+
+          {stock.extractionError && (
+            <div className="flex items-start justify-between gap-3 bg-red-400/10 border border-red-400/30 rounded-lg p-3 mb-4">
+              <div>
+                <p className="text-red-400 text-xs font-medium mb-0.5">Relationship extraction failed</p>
+                <p className="text-red-400/70 text-xs">{stock.extractionError}</p>
+              </div>
+              <button
+                onClick={dismissExtractionError}
+                className="text-red-400/60 hover:text-red-400 text-xs transition shrink-0"
+              >
+                ✕ Dismiss
+              </button>
+            </div>
+          )}
+
+          {stock.relationships.length === 0 ? (
+            <p className="text-muted text-center py-10">
+              No relationship map yet. Click "Map Relationships" to let the AI discover connections.
+            </p>
+          ) : (
+            (() => {
+              const mapRelationships = stock.relationships.filter((r) => r.section !== "contrarian");
+              const contrarianAngles = stock.relationships.filter((r) => r.section === "contrarian");
+
+              // Group map relationships by type
+              const grouped = new Map<string, Relationship[]>();
+              for (const r of mapRelationships) {
+                if (!grouped.has(r.type)) grouped.set(r.type, []);
+                grouped.get(r.type)!.push(r);
+              }
+
+              const confidenceClass = (c: string) =>
+                c === "confirmed"
+                  ? "border-emerald-400/40 bg-emerald-400/5"
+                  : c === "speculative"
+                  ? "border-amber-400/30 bg-amber-400/5 border-dashed"
+                  : "border-slate-500/30 bg-slate-500/5 border-dotted";
+
+              const confidenceBadge = (c: string) =>
+                c === "confirmed"
+                  ? "text-emerald-400 border-emerald-400/20 bg-emerald-400/10"
+                  : c === "speculative"
+                  ? "text-amber-400 border-emerald-400/20 bg-amber-400/10"
+                  : "text-slate-400 border-slate-400/20 bg-slate-400/10";
+
+              const confidenceLabel = (c: string) =>
+                c === "confirmed" ? "✓" : c === "speculative" ? "?" : "⟳ research";
+
+              const confidenceDot = (c: string) =>
+                c === "confirmed"
+                  ? "border-emerald-400 bg-emerald-400/20"
+                  : c === "speculative"
+                  ? "border-amber-400 bg-amber-400/20"
+                  : "border-slate-500 bg-slate-500/20";
+
+              return (
+                <div className="space-y-6">
+                  {/* Mind Map section */}
+                  {mapRelationships.length > 0 && (
+                    <div className="space-y-8">
+                      {Array.from(grouped.entries()).map(([type, items]) => (
+                        <div key={type}>
+                          <h3 className="text-xs text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-accent" />
+                            {type}
+                            <span className="text-muted/50">({items.length})</span>
+                          </h3>
+
+                          <div className="relative pl-6 border-l-2 border-border space-y-3">
+                            {items.map((r) => (
+                              <div
+                                key={r.id}
+                                className={`relative rounded-lg border p-4 ${confidenceClass(r.confidence)}`}
+                              >
+                                <div className={`absolute -left-[25px] top-4 w-3 h-3 rounded-full border-2 ${confidenceDot(r.confidence)}`} />
+
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-fg text-sm font-medium">{r.target}</span>
+                                      <span className={`text-[10px] border rounded-full px-2 py-0.5 ${confidenceBadge(r.confidence)}`}>
+                                        {confidenceLabel(r.confidence)}
+                                      </span>
+                                    </div>
+                                    {r.description && (
+                                      <p className="text-fg/70 text-xs leading-relaxed">{r.description}</p>
+                                    )}
+                                    {r.sources && (
+                                      <p className="text-muted/60 text-[10px] mt-2 font-mono">
+                                        {r.sources}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Contrarian / Outside the Box section */}
+                  {contrarianAngles.length > 0 && (
+                    <div className="border-t border-border pt-8 mt-8">
+                      <div className="flex items-center gap-3 mb-5">
+                        <h2 className="text-sm font-semibold text-purple-400 uppercase tracking-wider">
+                          💡 Outside the Box
+                        </h2>
+                        <span className="text-xs text-muted">
+                          Contrarian angles — challenge assumptions, explore blind spots
+                        </span>
+                      </div>
+
+                      <div className="relative pl-6 border-l-2 border-purple-400/30 space-y-3">
+                        {contrarianAngles.map((a) => (
+                          <div
+                            key={a.id}
+                            className="relative rounded-lg border border-purple-400/20 bg-purple-400/5 p-4"
+                          >
+                            <div className="absolute -left-[25px] top-4 w-3 h-3 rounded-full border-2 border-purple-400 bg-purple-400/20" />
+
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] uppercase text-purple-400/70 border border-purple-400/20 rounded-full px-2 py-0.5">
+                                  {a.type}
+                                </span>
+                                <span className="text-fg text-sm font-medium">{a.target}</span>
+                              </div>
+                              {a.description && (
+                                <p className="text-fg/70 text-xs leading-relaxed mt-1">{a.description}</p>
+                              )}
+                              {a.sources && (
+                                <p className="text-muted/60 text-[10px] mt-2 font-mono">
+                                  {a.sources}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()
+          )}
+        </div>
+      )}
+
       {/* Tab: All */}
       {tab === "all" && (
         <div>
@@ -571,7 +849,11 @@ export default function StockPage() {
             <div className="relative pl-6 border-l border-border space-y-6">
               {timeline.map((item, i) => (
                 <div key={i} className="relative">
-                  <div className={`absolute -left-[31px] w-3 h-3 rounded-full border-2 ${item.type === "file" ? "border-blue-400 bg-blue-400/20" : "border-accent bg-accent/20"}`} />
+                  <div className={`absolute -left-[31px] w-3 h-3 rounded-full border-2 ${
+                    item.type === "file" ? "border-blue-400 bg-blue-400/20" :
+                    item.type === "relationship" ? "border-purple-400 bg-purple-400/20" :
+                    "border-accent bg-accent/20"
+                  }`} />
                   {item.type === "file" ? (
                     <div className="bg-surface border border-border rounded-xl p-4">
                       <div className="flex items-center gap-2">
@@ -579,6 +861,16 @@ export default function StockPage() {
                         <a href={`/uploads/${ticker}/${item.data.filename}`} target="_blank" className="text-fg text-sm font-medium hover:text-accent transition">{item.data.originalName}</a>
                         <span className="text-muted text-xs ml-auto">{timeAgo(item.data.createdAt)}</span>
                       </div>
+                    </div>
+                  ) : item.type === "relationship" ? (
+                    <div className="bg-surface border border-border rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs text-purple-400 uppercase">Relation</span>
+                        <span className="text-xs bg-bg border border-border rounded-full px-2 py-0.5 text-muted">{item.data.type}</span>
+                        <span className="text-muted text-xs ml-auto">{timeAgo(item.data.createdAt)}</span>
+                      </div>
+                      <span className="text-fg text-sm font-medium">{item.data.target}</span>
+                      {item.data.description && <p className="text-fg/70 text-xs mt-1 line-clamp-2">{item.data.description}</p>}
                     </div>
                   ) : (
                     <div className="bg-surface border border-border rounded-xl p-4">

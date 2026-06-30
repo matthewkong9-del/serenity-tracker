@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { chat, chatJson } from "@/lib/deepseek";
 
 const SYSTEM_PROMPT = (ticker: string) => `You are a skeptical analyst. You work for the user, NOT for Serenity. Serenity's tweets are opinions — documents are evidence. Your job: stress-test his thesis.
 
@@ -130,26 +131,14 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
 
   if (!context.trim()) throw new Error("No content to summarize. Add tweets, files, or notes first.");
 
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT(ticker) },
-        { role: "user", content: `DATA TO ANALYZE:\n\n${context}` },
-      ],
-      temperature: 0.3,
-    }),
-  });
-
-  const data = await response.json();
-  if (data.error) throw new Error(data.error.message);
-
-  const summaryText = data.choices[0].message.content;
+  const summaryText = await chat(
+    [
+      { role: "system", content: SYSTEM_PROMPT(ticker) },
+      { role: "user", content: `DATA TO ANALYZE:\n\n${context}` },
+    ],
+    apiKey,
+    { temperature: 0.3 }
+  );
 
   await prisma.stock.update({
     where: { ticker },
@@ -174,4 +163,65 @@ export function needsSummary(stock: {
     stock.entries.some((e) => new Date(e.createdAt) > new Date(stock.lastSummaryAt!)) ||
     stock.claims.some((c) => new Date(c.createdAt) > new Date(stock.lastSummaryAt!))
   );
+}
+
+/**
+ * Rank unverified claims by "most impactful to verify" using DeepSeek.
+ * Returns empty array if no unverified claims or on error.
+ */
+export async function rankClaimsByImportance(
+  ticker: string,
+  apiKey: string
+): Promise<{ claimId: number; priority: number; reason: string }[]> {
+  const stock = await prisma.stock.findUnique({
+    where: { ticker },
+    include: {
+      claims: {
+        where: { status: "unverified" },
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
+
+  if (!stock || stock.claims.length === 0) return [];
+
+  // Build context: each claim with its index (1-based, safer than IDs for LLM)
+  const claimList = stock.claims.map((c, i) => {
+    const parts = [`[Claim ${i + 1}]`];
+    parts.push(c.text);
+    if (c.source) parts.push(`Source: ${c.source}`);
+    if (c.evidence) parts.push(`Existing evidence: ${c.evidence.slice(0, 300)}`);
+    return parts.join("\n");
+  }).join("\n\n");
+
+  const prompt = `You are an investment research analyst. Rank the following unverified claims for $${ticker} by "most impactful to verify" — meaning, which claim, if resolved, would most change your confidence in the investment thesis.
+
+For each claim, return its index number, priority (1 = highest impact), and a 1-sentence reason for the ranking.
+
+CLAIMS:
+${claimList}
+
+Return ONLY valid JSON, no markdown:
+{
+  "rankedClaims": [
+    {"claimIndex": 1, "priority": 1, "reason": "This claim directly addresses market share, the core of the bull thesis"},
+    {"claimIndex": 3, "priority": 2, "reason": "NASDAQ listing is a major catalyst if confirmed"}
+  ]
+}
+
+Only include claims worth prioritizing — skip claims that are vague opinions, personal takes, or price predictions. Max 5 ranked claims.`;
+
+  try {
+    const result = await chatJson<{
+      rankedClaims: { claimIndex: number; priority: number; reason: string }[];
+    }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.2 });
+
+    return (result.rankedClaims || []).map((r) => ({
+      claimId: stock.claims[r.claimIndex - 1]?.id ?? 0,
+      priority: r.priority,
+      reason: r.reason,
+    })).filter((r) => r.claimId > 0);
+  } catch {
+    return [];
+  }
 }

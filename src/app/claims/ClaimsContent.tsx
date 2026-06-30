@@ -57,6 +57,7 @@ export default function ClaimsContent() {
   const [editingClaimId, setEditingClaimId] = useState<number | null>(null);
   const [editEvidence, setEditEvidence] = useState("");
   const [expandedTweets, setExpandedTweets] = useState<Set<number>>(new Set());
+  const [verifyingClaimId, setVerifyingClaimId] = useState<number | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -111,6 +112,19 @@ export default function ClaimsContent() {
     });
     setEditingClaimId(null);
     setEditEvidence("");
+    load();
+  }
+
+  async function handleVerifyClaim(ticker: string, claimId: number) {
+    setVerifyingClaimId(claimId);
+    const res = await fetch(`/api/stocks/${ticker}/claims/${claimId}/verify`, {
+      method: "POST",
+    });
+    setVerifyingClaimId(null);
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "Verification failed");
+    }
     load();
   }
 
@@ -366,6 +380,17 @@ export default function ClaimsContent() {
                       + Add evidence
                     </button>
                   )}
+                  <button
+                    onClick={() => handleVerifyClaim(claim.stock.ticker, claim.id)}
+                    disabled={verifyingClaimId === claim.id}
+                    className={`text-xs px-2.5 py-1 rounded border transition mt-2 ${
+                      verifyingClaimId === claim.id
+                        ? "border-border text-muted cursor-wait"
+                        : "border-accent/30 text-accent hover:bg-accent/10"
+                    }`}
+                  >
+                    {verifyingClaimId === claim.id ? "Verifying..." : "🔍 Verify"}
+                  </button>
                 </div>
               </div>
             </div>

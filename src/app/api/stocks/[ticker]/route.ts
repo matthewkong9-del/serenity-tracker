@@ -11,6 +11,7 @@ export async function GET(
       files: { orderBy: { createdAt: "desc" } },
       entries: { orderBy: { createdAt: "desc" } },
       claims: { orderBy: { createdAt: "desc" } },
+      relationships: { orderBy: { createdAt: "desc" } },
     },
   });
 

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { runExtractions } from "@/lib/relationships";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function PUT(
@@ -21,6 +22,13 @@ export async function PUT(
       where: { id: parseInt(params.id) },
       data,
     });
+
+    // Re-extract relationships and contrarian angles when claim status or evidence changes
+    const ticker = params.ticker.toUpperCase();
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (apiKey) {
+      runExtractions(ticker, apiKey);
+    }
 
     return NextResponse.json(claim);
   } catch {

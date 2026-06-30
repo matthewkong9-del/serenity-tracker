@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { summarizeStock, needsSummary } from "@/lib/summarize";
+import { runExtractions } from "@/lib/relationships";
 import { NextResponse } from "next/server";
 
 export async function POST() {
@@ -23,6 +24,7 @@ export async function POST() {
   for (const stock of stale) {
     try {
       await summarizeStock(stock.ticker, apiKey);
+      runExtractions(stock.ticker, apiKey);
       results.push({ ticker: stock.ticker, success: true });
     } catch (e: any) {
       results.push({ ticker: stock.ticker, success: false, error: e.message });

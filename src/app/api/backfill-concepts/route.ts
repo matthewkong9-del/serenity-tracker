@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { chatJson } from "@/lib/deepseek";
 import { NextResponse } from "next/server";
 
 export async function POST() {
@@ -102,26 +103,8 @@ Tweet timestamp: ${timestamp ? new Date(timestamp).toISOString() : "unknown"}
 Tweet content:
 ${content.slice(0, 8000)}`;
 
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  const data = await response.json();
-  if (data.error) throw new Error(data.error.message);
-
-  const text = data.choices[0].message.content;
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("No JSON in response");
-  const result = JSON.parse(jsonMatch[0]);
+  const result = await chatJson<{
+    concepts: { name: string; description?: string; category?: string }[];
+  }>([{ role: "user", content: prompt }], apiKey);
   return result.concepts || [];
 }

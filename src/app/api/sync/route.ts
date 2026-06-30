@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { chatJson } from "@/lib/deepseek";
+import { runExtractions } from "@/lib/relationships";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 
@@ -64,27 +66,11 @@ Tweet timestamp: ${timestamp || "unknown"}
 Tweet content:
 ${content.slice(0, 8000)}`;
 
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  const data = await response.json();
-  if (data.error) throw new Error(data.error.message);
-
-  const text = data.choices[0].message.content;
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("No JSON in response");
-  return JSON.parse(jsonMatch[0]);
+  return chatJson<{
+    tickers: { symbol: string; name?: string; sector?: string }[];
+    claims: { ticker: string; text: string }[];
+    concepts: { name: string; description?: string; category?: string }[];
+  }>([{ role: "user", content: prompt }], apiKey);
 }
 
 
@@ -272,6 +258,29 @@ export async function POST(req: NextRequest) {
       }
     } catch (e: any) {
       errors.push({ index: i + 1, error: e.message });
+    }
+  }
+
+  // Re-extract relationships for every stock affected by this sync
+  const affectedTickers = new Set<string>();
+  for (const row of dataRows) {
+    const hash = hashContent(row.content);
+    const existing = await prisma.tweet.findUnique({ where: { contentHash: hash } });
+    if (existing) {
+      const claimStocks = await prisma.claim.findMany({
+        where: { tweetId: existing.id },
+        select: { stock: { select: { ticker: true } } },
+      });
+      for (const c of claimStocks) affectedTickers.add(c.stock.ticker);
+    }
+  }
+  for (const symbol of newStocks) affectedTickers.add(symbol);
+
+  for (const ticker of Array.from(affectedTickers)) {
+    try {
+      await runExtractions(ticker, apiKey);
+    } catch (e: any) {
+      errors.push({ index: 0, error: `Relationship extraction failed for ${ticker}: ${e.message}` });
     }
   }
 

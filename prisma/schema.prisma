@@ -15,11 +15,13 @@ model Stock {
   notes          String?
   summary        String?
   lastSummaryAt  DateTime?
+  extractionError String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   files          File[]
   entries        Entry[]
   claims         Claim[]
+  relationships  Relationship[]
 }
 
 model File {
@@ -88,4 +90,18 @@ model TweetConcept {
   concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
 
   @@unique([tweetId, conceptId])
+}
+
+model Relationship {
+  id          Int      @id @default(autoincrement())
+  stockId     Int
+  stock       Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  type        String   // "competitor" | "partner" | "supplier" | "moat" | "policy" | "gap" | AI-discovered
+  target      String   // free text — company name, concept, policy, person
+  description String?  // AI-written explanation
+  sources     String?  // citations — e.g. "[Tweet 2024-03-15], [Annual Report 2025 p.10]"
+  confidence  String   @default("speculative") // "confirmed" | "speculative" | "gap"
+  section     String   @default("map") // "map" | "contrarian"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

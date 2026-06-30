@@ -13,13 +13,14 @@ A Next.js 14 stock tracking and AI-powered research analysis app. Tracks stocks 
 
 ## Database Schema (Prisma — SQLite)
 
-5 models: `Stock`, `File`, `Entry`, `Tweet`, `Claim`
+6 models: `Stock`, `File`, `Entry`, `Tweet`, `Claim`, `Relationship`
 
 - **Stock** — ticker (unique), name, sector, notes, summary (AI-generated), lastSummaryAt
 - **File** — belongs to Stock; filename, originalName, fileType, fileSize, description, markdown (converted content for LLM)
 - **Entry** — belongs to Stock; title, content, tag (user's research notes)
 - **Tweet** — contentHash (unique, SHA-256 truncated), content, timestamp, claimCount
 - **Claim** — belongs to Stock + optional Tweet; text, source, status (unverified/supported/refuted/disputed), evidence
+- **Relationship** — belongs to Stock; type (competitor/partner/supplier/moat/policy/gap + AI-discovered), target (free text), description, confidence (confirmed/speculative/gap)
 
 ## API Routes
 
@@ -33,6 +34,7 @@ A Next.js 14 stock tracking and AI-powered research analysis app. Tracks stocks 
 | `/api/stocks/[ticker]/entries/[id]` | PUT, DELETE | Update/delete a note |
 | `/api/stocks/[ticker]/summarize` | POST | Run AI summary for one stock (DeepSeek — gathers tweets, claims, docs, notes → structured analysis) |
 | `/api/stocks/[ticker]/claims/[id]` | PUT | Update claim status (cycle: unverified→supported→refuted→disputed) and evidence |
+| `/api/stocks/[ticker]/relationships` | POST | Re-extract AI relationship map for a stock (manual trigger) |
 | `/api/summarize-all` | POST | Summarize ALL stocks that have new data since last summary |
 | `/api/sync` | POST | Fetch CSV from Google Sheets, parse tweets, dedup by content hash, extract tickers+claims via DeepSeek, auto-create stocks |
 | `/api/convert-url` | POST | Convert any URL to Markdown via `markit` CLI |
@@ -50,12 +52,15 @@ A Next.js 14 stock tracking and AI-powered research analysis app. Tracks stocks 
 ## Key Architecture Decisions
 
 1. **Files are auto-converted to Markdown on upload** using `markit-ai` CLI. Original file is preserved in `public/uploads/[ticker]/`, converted markdown stored in DB for LLM consumption. Non-convertible files show "not indexed" badge.
-2. **Summary freshness detection** — compares `lastSummaryAt` against the newest file/entry/claim creation date. "Run Summary" button is disabled when up-to-date.
+2. **Summary freshness detection** — compares `lastSummaryAt` against the newest file/entry/claim/relationship creation date. "Run Summary" button is disabled when up-to-date.
 3. **Claim lifecycle** — claims start "unverified", user cycles through supported→refuted→disputed with one click. Evidence field supports free-text notes/links.
 4. **Tweet dedup** — SHA-256 hash of content (first 16 chars) prevents re-processing the same tweet.
 5. **LLM prompt engineering** — The summary prompt instructs DeepSeek to be a "skeptical analyst" working for the user, treating Serenity's tweets as low-reliability opinions and uploaded documents as high-reliability evidence. Output format is structured: Stance, Confidence, Verdict, Supported/Unverified/Contradicted claims, Key Numbers, Gaps, Bottom Line.
 6. **Stance parsing** — regex extracts Bullish/Bearish/Neutral from `**Current Stance:** ...` or `**Stance:** ...` in summaries.
 7. **CSS variables** — custom dark theme (`--bg`, `--fg`, `--surface`, `--border`, `--muted`, `--accent`) defined in `globals.css`. No CSS framework dependency beyond Tailwind.
+8. **DeepSeek client module** (`src/lib/deepseek.ts`) — single `chat()` and `chatJson()` interface for all LLM calls. Auth, error handling, and JSON parsing concentrated in one place. 3 former copy-pasted fetch sites now cross the same seam.
+9. **Relationship extraction** — separate LLM call with seeded discovery prompt (competitor, partner, supplier, moat, policy, gap + AI expansion). Full context (tweets, claims, concepts, documents, notes) fed to the AI. Output confidence-labeled: confirmed (solid), speculative (dashed), gap (dotted).
+10. **Auto-extraction triggers** — relationships re-extracted on every data change: tweet sync, file upload, summarize (single or batch), claim status/evidence update. Manual "Re-map" button on stock page as fallback.
 
 ## Running the App
 

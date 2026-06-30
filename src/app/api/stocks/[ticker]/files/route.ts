@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { runExtractions } from "@/lib/relationships";
 import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { exec } from "child_process";
@@ -73,6 +74,12 @@ export async function POST(
       markdown,
     },
   });
+
+  // Re-extract relationships and contrarian angles now that new evidence arrived
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (apiKey) {
+    runExtractions(ticker, apiKey);
+  }
 
   return NextResponse.json(saved, { status: 201 });
 }
