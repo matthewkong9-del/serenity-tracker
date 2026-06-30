@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ["markit-ai", "mupdf"],
+  experimental: {
+    serverComponentsExternalPackages: ["markit-ai", "mupdf"],
+  },
 };
 export default nextConfig;
