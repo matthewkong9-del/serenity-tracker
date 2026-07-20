@@ -30,6 +30,7 @@ export default function Home() {
   const [refreshingPrices, setRefreshingPrices] = useState(false);
   const [costs, setCosts] = useState<any>(null);
   const [showCosts, setShowCosts] = useState(false);
+  const [researchingClaims, setResearchingClaims] = useState(false);
 
   useEffect(() => {
     fetch("/api/stocks")
@@ -46,6 +47,19 @@ export default function Home() {
     const r = await fetch("/api/stocks");
     setStocks(await r.json());
     setRefreshingPrices(false);
+  }
+
+  async function researchClaims() {
+    setResearchingClaims(true);
+    const res = await fetch("/api/research-all?limit=10", { method: "POST" });
+    const data = await res.json();
+    // Refresh costs to update pending count
+    const c = await fetch("/api/costs");
+    setCosts(await c.json());
+    setResearchingClaims(false);
+    alert(
+      `Researched ${data.researched} claims · ${data.failed} failed · ${data.remaining ?? "?"} remaining`
+    );
   }
 
   // Normalize and group sectors — only show groups with 2+ stocks
@@ -223,9 +237,18 @@ export default function Home() {
                   Brave API: {costs.braveToday} / 2,000 free today
                 </span>
                 {costs.pending.unverifiedClaims > 0 && (
-                  <span className="text-amber-400">
-                    ⏳ {costs.pending.unverifiedClaims} claims pending · ~${costs.pending.estimatedCost} to research
-                  </span>
+                  <>
+                    <span className="text-amber-400">
+                      ⏳ {costs.pending.unverifiedClaims} claims pending · ~${costs.pending.estimatedCost} to research
+                    </span>
+                    <button
+                      onClick={researchClaims}
+                      disabled={researchingClaims}
+                      className="bg-accent text-bg text-[10px] px-3 py-1 rounded hover:bg-accent/90 transition disabled:opacity-50"
+                    >
+                      {researchingClaims ? "Researching..." : "Research 10"}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
