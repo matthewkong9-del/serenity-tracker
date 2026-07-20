@@ -141,7 +141,7 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
       { role: "user", content: `DATA TO ANALYZE:\n\n${context}` },
     ],
     apiKey,
-    { temperature: 0.3 }
+    { temperature: 0.3, purpose: "summarize" }
   );
 
   await prisma.stock.update({

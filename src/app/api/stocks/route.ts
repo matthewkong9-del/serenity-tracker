@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/db";
+import { prisma, parseStance } from "@/lib/db";
+import { assignBucket, type OpportunityBucket } from "@/lib/scoring";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
@@ -10,11 +11,46 @@ export async function GET() {
       name: true,
       sector: true,
       summary: true,
+      currentPrice: true,
+      pbRatio: true,
+      lastPriceUpdated: true,
       updatedAt: true,
       _count: { select: { files: true, notes: true, claims: true } },
+      claims: {
+        select: { status: true },
+      },
     },
   });
-  return NextResponse.json(stocks);
+
+  // Compute stance, claim stats, and opportunity bucket server-side
+  const enriched = stocks.map((s) => {
+    const counts = { supported: 0, refuted: 0, disputed: 0, unverified: 0 };
+    for (const c of s.claims) {
+      if (c.status in counts) {
+        (counts as any)[c.status]++;
+      } else {
+        counts.unverified++;
+      }
+    }
+
+    const bucket: OpportunityBucket = assignBucket({
+      pbRatio: s.pbRatio,
+      summary: s.summary,
+      totalClaims: s._count.claims,
+      supportedClaims: counts.supported,
+      refutedClaims: counts.refuted,
+    });
+
+    const { claims: _, ...rest } = s;
+    return {
+      ...rest,
+      stance: parseStance(s.summary),
+      bucket,
+      claimCounts: counts,
+    };
+  });
+
+  return NextResponse.json(enriched);
 }
 
 export async function POST(req: NextRequest) {

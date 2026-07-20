@@ -8,21 +8,24 @@ generator client {
 }
 
 model Stock {
-  id             Int      @id @default(autoincrement())
-  ticker         String   @unique
-  name           String?
-  sector         String?
-  generalNotes   String?  @map("notes")
-  summary        String?
-  lastSummaryAt  DateTime?
+  id              Int      @id @default(autoincrement())
+  ticker          String   @unique
+  name            String?
+  sector          String?
+  generalNotes    String?  @map("notes")
+  summary         String?
+  lastSummaryAt   DateTime?
   extractionError String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  files          File[]
-  notes         Note[]
-  claims         Claim[]
-  relationships  Relationship[]
-  decision       Decision?
+  currentPrice    Float?
+  pbRatio         Float?
+  lastPriceUpdated DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  files           File[]
+  notes          Note[]
+  claims          Claim[]
+  relationships   Relationship[]
+  decision        Decision?
 }
 
 model File {
@@ -57,6 +60,7 @@ model Tweet {
   content     String
   timestamp   DateTime?
   claimCount  Int            @default(0)
+  isInvesting Boolean?
   processedAt DateTime       @default(now())
   claims      Claim[]
   concepts    TweetConcept[]
@@ -73,8 +77,10 @@ model Claim {
   status     String   @default("unverified")
   evidence   String?
   extractionConfidence Int? @map("confidence") // 1-5 LLM self-rating during extraction (null = not rated)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  researchStatus  String  @default("pending") // "pending" | "researching" | "done" | "failed"
+  researchedAt    DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model Concept {
@@ -119,4 +125,25 @@ model Decision {
   reasoning String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model CleanupTask {
+  id        Int      @id @default(autoincrement())
+  type      String   // "duplicate_claim" | "ticker_normalize"
+  status    String   @default("pending") // "pending" | "approved" | "ignored" | "executed"
+  summary   String   // human-readable description shown on /cleanup page
+  detail    String   // JSON blob with affected record IDs and proposed action
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ApiCallLog {
+  id          Int      @id @default(autoincrement())
+  source      String   // "deepseek" | "brave" | "finnhub"
+  purpose     String   // "pre_filter" | "claim_extraction" | "summarize" | "research_verdict" | "cleanup_scan" | "relationship" | "price_refresh"
+  model       String?  // e.g. "deepseek-chat"
+  inputChars  Int?     // approximate input size (chars)
+  outputChars Int?     // approximate output size (chars)
+  estimatedCost Float? // USD
+  createdAt   DateTime @default(now())
 }

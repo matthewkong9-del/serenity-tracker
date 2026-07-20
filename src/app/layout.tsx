@@ -17,17 +17,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/" className="text-lg font-semibold tracking-tight text-fg">
                 Serenity Tracker
               </a>
-              <a href="/portfolio" className="text-sm text-muted hover:text-fg transition">
-                Portfolio
+              <a href="/" className="text-sm text-muted hover:text-fg transition">
+                Dashboard
               </a>
               <a href="/tweets" className="text-sm text-muted hover:text-fg transition">
                 Tweets
-              </a>
-              <a href="/claims" className="text-sm text-muted hover:text-fg transition">
-                Claims
-              </a>
-              <a href="/concepts" className="text-sm text-muted hover:text-fg transition">
-                Concepts
               </a>
             </div>
             <div className="flex items-center gap-4">

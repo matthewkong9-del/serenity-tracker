@@ -1,11 +1,30 @@
 import { prisma } from "@/lib/db";
 import { chatJson } from "@/lib/deepseek";
 import { runExtractions } from "@/lib/relationships";
+import { researchNewClaims } from "@/lib/research";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 
 function hashContent(content: string): string {
   return createHash("sha256").update(content.trim()).digest("hex").slice(0, 16);
+}
+
+/** Quick LLM classifier: is this tweet about investing/markets, or personal/off-topic?
+ *  Costs ~$0.00002 per call — tiny prompt + yes/no response. */
+async function isInvestingTweet(
+  content: string,
+  apiKey: string
+): Promise<boolean> {
+  const prompt = `Is the following tweet about investing, financial markets, stocks, or company/industry analysis? Answer ONLY "yes" or "no".
+
+Tweet: ${content.slice(0, 2000)}`;
+
+  const result = await chatJson<{ answer: string }>(
+    [{ role: "user", content: prompt }],
+    apiKey,
+    { temperature: 0 }
+  );
+  return result.answer?.toLowerCase().trim() === "yes";
 }
 
 async function extractClaimsFromTweet(
@@ -77,7 +96,28 @@ ${content.slice(0, 8000)}`;
     tickers: { symbol: string; name?: string; sector?: string }[];
     claims: { ticker: string; text: string; confidence: number }[];
     concepts: { name: string; description?: string; category?: string }[];
-  }>([{ role: "user", content: prompt }], apiKey);
+  }>([{ role: "user", content: prompt }], apiKey, { purpose: "claim_extraction" });
+}
+
+/** Re-extract the relationship + contrarian map for each ticker with bounded
+ *  concurrency. Errors are caught per-ticker (and surfaced via
+ *  Stock.extractionError inside runExtractions), so this never rejects. */
+async function runRelationshipExtractions(tickers: string[], apiKey: string): Promise<void> {
+  const CONCURRENCY = 4;
+  const queue = [...tickers];
+  async function worker() {
+    while (queue.length > 0) {
+      const ticker = queue.shift();
+      if (!ticker) break;
+      try {
+        await runExtractions(ticker, apiKey);
+      } catch (e: any) {
+        console.error(`[sync] relationship extraction failed for ${ticker}: ${e.message}`);
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(CONCURRENCY, tickers.length) }, () => worker());
+  await Promise.all(workers);
 }
 
 export async function POST(req: NextRequest) {
@@ -155,6 +195,9 @@ export async function POST(req: NextRequest) {
   let totalClaims = 0;
   const newStocks: string[] = [];
   const errors: { index: number; error: string }[] = [];
+  // Stocks that received NEW claims from NEW tweets this sync — only these need
+  // their relationship map re-extracted.
+  const newlyAffectedTickers = new Set<string>();
 
   for (let i = 0; i < dataRows.length; i++) {
     const row = dataRows[i];
@@ -177,6 +220,24 @@ export async function POST(req: NextRequest) {
     });
 
     newTweets++;
+
+    // Pre-filter: skip non-investing tweets before expensive claim extraction
+    let investing = true;
+    try {
+      investing = await isInvestingTweet(row.content, apiKey);
+      await prisma.tweet.update({
+        where: { id: tweet.id },
+        data: { isInvesting: investing },
+      });
+    } catch {
+      // If classifier fails, err on the side of extracting (don't lose data)
+      await prisma.tweet.update({
+        where: { id: tweet.id },
+        data: { isInvesting: null },
+      });
+    }
+
+    if (!investing) continue;
 
     // Extract claims via LLM
     try {
@@ -221,6 +282,7 @@ export async function POST(req: NextRequest) {
           },
         });
         tweetClaims++;
+        newlyAffectedTickers.add(symbol);
       }
 
       if (tweetClaims > 0) {
@@ -265,30 +327,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Re-extract relationships for every stock affected by this sync
-  const affectedTickers = new Set<string>();
-  for (const row of dataRows) {
-    const hash = hashContent(row.content);
-    const existing = await prisma.tweet.findUnique({ where: { contentHash: hash } });
-    if (existing) {
-      const claimStocks = await prisma.claim.findMany({
-        where: { tweetId: existing.id },
-        select: { stock: { select: { ticker: true } } },
-      });
-      for (const c of claimStocks) affectedTickers.add(c.stock.ticker);
-    }
-  }
-  for (const symbol of newStocks) affectedTickers.add(symbol);
+  // Re-extract relationships ONLY for stocks that received new claims this sync
+  // (not every tweet already in the DB). This runs in the background so the sync
+  // response returns immediately — tweets and claims are already persisted, and
+  // the relationship mind map updates on the next stock-page load.
+  void runRelationshipExtractions(Array.from(newlyAffectedTickers), apiKey).catch((e) => {
+    console.error("[sync] background relationship extraction failed:", e);
+  });
 
-  for (const ticker of Array.from(affectedTickers)) {
-    try {
-      await runExtractions(ticker, apiKey);
-    } catch (e: any) {
-      errors.push({
-        index: 0,
-        error: `Relationship extraction failed for ${ticker}: ${e.message}`,
-      });
-    }
+  // Agent 2: Research new claims in the background.
+  // Only fires when there are actually new claims to research.
+  if (newlyAffectedTickers.size > 0) {
+    void researchNewClaims(Array.from(newlyAffectedTickers), apiKey).catch((e) => {
+      console.error("[sync] background claim research failed:", e);
+    });
   }
 
   return NextResponse.json({

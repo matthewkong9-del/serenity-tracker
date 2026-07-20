@@ -10,9 +10,9 @@ export type Stance = "Bullish" | "Bearish" | "Neutral" | null;
 
 export function parseStance(summary: string | null): Stance {
   if (!summary) return null;
-  // Handles: "**Current Stance**: Bullish", "**Current Stance:** Bearish", "**Stance:** *Bullish*"
+  // Handles: "**Current Stance**: Bullish", "**Stance:** 🟡 Neutral", "**Stance:** *Bearish*"
   const match = summary.match(
-    /\*\*(?:Current )?Stance:?\*\*\s*:?\s*\*?(Bullish|Bearish|Neutral)\*?/i
+    /\*\*(?:Current )?Stance:?\*\*[^a-zA-Z]*(Bullish|Bearish|Neutral)/i
   );
   return match
     ? ((match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()) as Stance)

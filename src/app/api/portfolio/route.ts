@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/db";
 import { NextResponse } from "next/server";
 
+// Force dynamic rendering so portfolio data reflects DB changes after a deploy
+// instead of a build-time snapshot.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const stocks = await prisma.stock.findMany({
     select: {

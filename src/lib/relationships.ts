@@ -107,7 +107,7 @@ For each relationship, provide:
 - **target**: the company, technology, concept, policy, or question on the other end
 - **description**: 1-2 sentences explaining the connection and why it matters
 - **sources**: cite where this information came from. Use short labels like "[Tweet 2024-03-15]", "[Annual Report 2025 p.10]", "[Note: thesis]", "[Claim: ...]". Be specific — the user needs to trace every relationship back to evidence.
-- **confidence**: "confirmed" (multiple sources agree), "speculative" (mentioned but not verified), or "gap" (missing information you need)
+- **sourceConfidence**: "confirmed" (multiple sources agree), "speculative" (mentioned but not verified), or "gap" (missing information you need)
 
 IMPORTANT: Gaps are as valuable as confirmed relationships. If the data mentions something intriguing but doesn't explain it — that's a gap. If you'd need an earnings report or industry data to verify something — that's a gap. Flag them aggressively.
 
@@ -119,14 +119,14 @@ Return ONLY valid JSON, no markdown:
       "target": "Company X",
       "description": "Supplies Y component to $${ticker}. Mentioned in Q3 filing as critical vendor.",
       "sources": "[Annual Report 2025 p.42], [Tweet 2025-11-03]",
-      "confidence": "confirmed"
+      "sourceConfidence": "confirmed"
     },
     {
       "type": "gap",
       "target": "Q4 earnings data",
       "description": "Last earnings report available is Q2. Need Q3/Q4 to verify revenue growth trajectory.",
       "sources": "[Annual Report 2025 — Q2 figures only]",
-      "confidence": "gap"
+      "sourceConfidence": "gap"
     }
   ]
 }
@@ -155,7 +155,7 @@ For each angle, provide:
 - **target**: the specific company, technology, event, or idea
 - **description**: 2-3 sentences explaining the angle and why it's worth thinking about
 - **sources**: what data triggered this thought. Use short labels like "[Tweet 2024-03-15]", "[Annual Report 2025 p.10]", "[Note: thesis]".
-- **confidence**: use "speculative" for contrarian ideas (they're inherently uncertain), "confirmed" only if multiple sources point to the same angle
+- **sourceConfidence**: use "speculative" for contrarian ideas (they're inherently uncertain), "confirmed" only if multiple sources point to the same angle
 
 Return ONLY valid JSON, no markdown:
 {
@@ -165,7 +165,7 @@ Return ONLY valid JSON, no markdown:
       "target": "Glass substrate adoption timeline",
       "description": "The entire bull case rests on glass substrates replacing silicon interposers by 2027. If adoption slips by 2 years, LPKF's revenue ramp collapses. TSMC's cautious language about glass in their last earnings call suggests this risk is real.",
       "sources": "[Annual Report 2025 p.10], [Tweet 2025-08-12]",
-      "confidence": "speculative"
+      "sourceConfidence": "speculative"
     }
   ]
 }
@@ -209,7 +209,7 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
 
   const result = await chatJson<{
     relationships: RelationshipExtract[];
-  }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.2 });
+  }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.2, purpose: "relationship" });
 
   if (!result.relationships || result.relationships.length === 0) return;
 
@@ -228,7 +228,7 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
       target: (r.target || "Unknown").trim().slice(0, 200),
       description: r.description?.trim()?.slice(0, 500) || null,
       sources: r.sources?.trim()?.slice(0, 500) || null,
-      confidence: ["confirmed", "speculative", "gap"].includes(r.sourceConfidence)
+      sourceConfidence: ["confirmed", "speculative", "gap"].includes(r.sourceConfidence)
         ? r.sourceConfidence
         : "speculative",
       section: "known",
@@ -263,7 +263,7 @@ export async function extractContrarianAngles(ticker: string, apiKey: string): P
       target: (a.target || "Unknown").trim().slice(0, 200),
       description: a.description?.trim()?.slice(0, 500) || null,
       sources: a.sources?.trim()?.slice(0, 500) || null,
-      confidence: ["confirmed", "speculative", "gap"].includes(a.sourceConfidence)
+      sourceConfidence: ["confirmed", "speculative", "gap"].includes(a.sourceConfidence)
         ? a.sourceConfidence
         : "speculative",
       section: "contrarian",

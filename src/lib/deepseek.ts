@@ -2,18 +2,111 @@ export interface DeepSeekOptions {
   model?: string;
   temperature?: number;
   responseFormat?: "text" | "json_object";
+  /** What this call is for — logged to track costs. */
+  purpose?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Provider registry — add new providers here without touching any caller.
+// ---------------------------------------------------------------------------
+
+interface ProviderConfig {
+  label: string;
+  endpoint: string;
+  defaultModel: string;
+  /** Env var that holds the API key for this provider. */
+  apiKeyEnv: string;
+}
+
+const PROVIDERS: Record<string, ProviderConfig> = {
+  deepseek: {
+    label: "DeepSeek",
+    endpoint: "https://api.deepseek.com/chat/completions",
+    defaultModel: "deepseek-chat",
+    apiKeyEnv: "DEEPSEEK_API_KEY",
+  },
+  zai: {
+    label: "Z.AI",
+    endpoint: "https://api.z.ai/api/paas/v4/chat/completions",
+    defaultModel: "glm-5.2",
+    apiKeyEnv: "ZAI_API_KEY",
+  },
+};
+
+function resolveProvider(): ProviderConfig {
+  const name = process.env.AI_PROVIDER || "deepseek";
+  if (!PROVIDERS[name]) {
+    console.warn(`[ai] Unknown AI_PROVIDER "${name}", falling back to deepseek`);
+    return PROVIDERS.deepseek;
+  }
+  return PROVIDERS[name];
+}
+
+function resolveApiKey(passedKey: string, provider: ProviderConfig): string {
+  // Prefer the provider-specific env var when a non-default provider is active,
+  // so callers that still read DEEPSEEK_API_KEY don't block the switch.
+  if (process.env.AI_PROVIDER && process.env.AI_PROVIDER !== "deepseek") {
+    const key = process.env[provider.apiKeyEnv];
+    if (key) return key;
+  }
+  return passedKey;
+}
+
+// ---------------------------------------------------------------------------
+// Cost tracking
+// ---------------------------------------------------------------------------
+
+// Rough estimate: ~4 chars = 1 token for English text.
+// DeepSeek pricing per 1M tokens: $0.27 input, $1.10 output.
+const COST_PER_INPUT_CHAR = 0.27 / 1_000_000 / 4;
+const COST_PER_OUTPUT_CHAR = 1.10 / 1_000_000 / 4;
+
+async function logCall(
+  purpose: string,
+  model: string,
+  inputChars: number,
+  outputChars: number,
+  source: string
+) {
+  try {
+    const { prisma } = await import("@/lib/db");
+    const cost =
+      inputChars * COST_PER_INPUT_CHAR + outputChars * COST_PER_OUTPUT_CHAR;
+    await prisma.apiCallLog.create({
+      data: {
+        source,
+        purpose,
+        model,
+        inputChars,
+        outputChars,
+        estimatedCost: Math.round(cost * 1_000_000) / 1_000_000, // 6 decimal places
+      },
+    });
+  } catch {
+    // Never let logging break the actual call
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public API (unchanged signatures — zero caller churn)
+// ---------------------------------------------------------------------------
+
 /**
- * Call the DeepSeek Chat API. One module, one interface — all callers cross the same seam.
+ * Call the LLM Chat API. Provider is determined by the AI_PROVIDER env var
+ * (default: "deepseek"). One module, one interface — all callers cross the
+ * same seam regardless of which provider is active.
  */
 export async function chat(
   messages: { role: "user" | "system" | "assistant"; content: string }[],
   apiKey: string,
   options?: DeepSeekOptions
 ): Promise<string> {
+  const provider = resolveProvider();
+  const key = resolveApiKey(apiKey, provider);
+  const model = options?.model ?? process.env.AI_MODEL ?? provider.defaultModel;
+
   const body: Record<string, unknown> = {
-    model: options?.model ?? "deepseek-chat",
+    model,
     messages,
     temperature: options?.temperature ?? 0.1,
   };
@@ -22,11 +115,11 @@ export async function chat(
     body.response_format = { type: "json_object" };
   }
 
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
+  const response = await fetch(provider.endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify(body),
   });
@@ -34,7 +127,16 @@ export async function chat(
   const data = await response.json();
   if (data.error) throw new Error(data.error.message);
 
-  return data.choices[0].message.content;
+  const output = data.choices[0].message.content as string;
+
+  // Log cost in background (never blocks the caller)
+  if (options?.purpose) {
+    const inputChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+    const outputChars = output.length;
+    void logCall(options.purpose, model, inputChars, outputChars, provider.label);
+  }
+
+  return output;
 }
 
 /**
