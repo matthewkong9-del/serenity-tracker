@@ -19,37 +19,38 @@ export interface ScoringInput {
  * Assign a stock to one of three opportunity buckets.
  *
  * Rules (checked in order):
- *   🟢 STRONG BUY  — P/B < 1.0  AND  >50% of resolved claims are supported  AND  Bullish
- *   🟡 WATCH        — P/B < 1.5  AND  ≥30% of resolved claims are supported  AND  not Bearish
+ *   🟢 STRONG BUY  — P/B < 1.0 AND >50% verified AND Bullish
+ *                    OR P/B < 1.0 AND <3 claims AND Bullish (not enough data to disqualify)
+ *   🟡 WATCH        — P/B < 1.5 AND ≥30% verified AND not Bearish
+ *                    OR has price AND Bullish AND ≥30% verified (international, no P/B)
+ *                    OR P/B < 1.5 AND <3 claims AND not Bearish
  *   ⚪ PASS         — everything else
  *
- * When P/B is missing (null), the stock always falls to Pass — we need price
- * data to assess "cheap."
+ * When P/B is missing, the stock can still enter Watch if it has a price,
+ * Bullish stance, and decent claim verification.
  */
 export function assignBucket(input: ScoringInput): OpportunityBucket {
   const stance = parseStance(input.summary);
   const resolved = input.supportedClaims + input.refutedClaims;
   const verificationRate = resolved > 0 ? input.supportedClaims / resolved : 0;
-
   const hasEnoughClaims = input.totalClaims >= 3;
+  const isCheap = input.pbRatio !== null && input.pbRatio < 1.0;
+  const isModerate = input.pbRatio !== null && input.pbRatio < 1.5;
+  const hasPrice = (input as any).currentPrice != null; // injected by API
 
-  // Strong Buy
+  // Strong Buy — needs confirmed cheap valuation + bullish thesis
   if (
-    input.pbRatio !== null &&
-    input.pbRatio < 1.0 &&
+    isCheap &&
     stance === "Bullish" &&
     (!hasEnoughClaims || verificationRate >= 0.5)
   ) {
     return "strong_buy";
   }
 
-  // Watch
-  if (
-    input.pbRatio !== null &&
-    input.pbRatio < 1.5 &&
-    stance !== "Bearish" &&
-    (!hasEnoughClaims || verificationRate >= 0.3)
-  ) {
+  // Watch — cheap-to-moderate valuation, or bullish international with price
+  const watchByPb = isModerate && stance !== "Bearish" && (!hasEnoughClaims || verificationRate >= 0.3);
+  const watchByStance = !isModerate && hasPrice && stance === "Bullish" && verificationRate >= 0.3;
+  if (watchByPb || watchByStance) {
     return "watch";
   }
 

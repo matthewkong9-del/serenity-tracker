@@ -39,7 +39,8 @@ export async function GET() {
       totalClaims: s._count.claims,
       supportedClaims: counts.supported,
       refutedClaims: counts.refuted,
-    });
+      currentPrice: s.currentPrice,
+    } as any);
 
     const { claims: _, ...rest } = s;
     return {

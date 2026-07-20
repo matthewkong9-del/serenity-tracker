@@ -4,8 +4,10 @@ import { fetchStockMetrics as yahooFetch } from "@/lib/yahoo";
 import { NextResponse } from "next/server";
 
 /** POST /api/prices/refresh — called by daily cron.
- *  Phase 1: Finnhub for all stocks (rate-limited, provides price + P/B).
- *  Phase 2: Yahoo Finance for stocks Finnhub didn't cover (no API key needed). */
+ *  Phase 1: Finnhub for all stocks (price + P/B where available).
+ *  Phase 2: Yahoo Finance for stocks Finnhub didn't price.
+ *  P/B is tracked independently — Finnhub metrics may return P/B even
+ *  when the quote endpoint returns no price (common for international stocks). */
 export async function POST() {
   const finnhubKey = process.env.FINNHUB_API_KEY;
   if (!finnhubKey) {
@@ -19,7 +21,9 @@ export async function POST() {
     select: { id: true, ticker: true, sector: true },
   });
 
-  const results = new Map<number, { price: number | null; pbRatio: number | null; source: string }>();
+  // Track price and P/B independently
+  const priceMap = new Map<number, { price: number; source: string }>();
+  const pbMap = new Map<number, number>();
 
   // ── Phase 1: Finnhub (rate-limited: 60 calls/min) ──
   for (let i = 0; i < stocks.length; i++) {
@@ -29,29 +33,34 @@ export async function POST() {
     try {
       const m = await finnhubFetch(s.ticker, s.sector);
       if (m.price !== null) {
-        results.set(s.id, { price: m.price, pbRatio: m.pbRatio, source: "finnhub" });
+        priceMap.set(s.id, { price: m.price, source: "finnhub" });
+      }
+      // Capture P/B even when price failed — metrics endpoint is independent
+      if (m.pbRatio !== null) {
+        pbMap.set(s.id, m.pbRatio);
       }
     } catch (e: any) {
       console.warn(`[prices] finnhub failed for ${s.ticker}: ${e.message}`);
     }
   }
 
-  // ── Phase 2: Yahoo Finance for misses (no key, minimal delays) ──
-  const missed = stocks.filter((s) => !results.has(s.id));
+  // ── Phase 2: Yahoo Finance for price misses ──
+  const missed = stocks.filter((s) => !priceMap.has(s.id));
 
   if (missed.length > 0) {
-    console.log(`[prices] ${missed.length} stocks missed by Finnhub, trying Yahoo...`);
+    console.log(
+      `[prices] ${missed.length} stocks missed by Finnhub, trying Yahoo...`
+    );
 
     for (const s of missed) {
       try {
         const m = await yahooFetch(s.ticker, s.sector);
         if (m.price !== null) {
-          results.set(s.id, { price: m.price, pbRatio: null, source: "yahoo" });
+          priceMap.set(s.id, { price: m.price, source: "yahoo" });
         }
       } catch (e: any) {
         console.warn(`[prices] yahoo failed for ${s.ticker}: ${e.message}`);
       }
-      // Brief delay to avoid rate limiting from Yahoo
       await new Promise((r) => setTimeout(r, 150));
     }
   }
@@ -60,28 +69,33 @@ export async function POST() {
   let fromFinnhub = 0;
   let fromYahoo = 0;
 
-  for (const [stockId, data] of Array.from(results.entries())) {
-    await prisma.stock.update({
-      where: { id: stockId },
-      data: {
-        currentPrice: data.price,
-        pbRatio: data.pbRatio,
-        lastPriceUpdated: new Date(),
-      },
-    });
-    if (data.source === "finnhub") fromFinnhub++;
-    else if (data.source === "yahoo") fromYahoo++;
+  for (const s of stocks) {
+    const pd = priceMap.get(s.id);
+    const pb = pbMap.get(s.id) ?? null;
+
+    if (pd || pb !== null) {
+      await prisma.stock.update({
+        where: { id: s.id },
+        data: {
+          currentPrice: pd?.price ?? undefined,
+          pbRatio: pb,
+          lastPriceUpdated: new Date(),
+        },
+      });
+
+      if (pd?.source === "finnhub") fromFinnhub++;
+      else if (pd?.source === "yahoo") fromYahoo++;
+    }
   }
 
-  const updated = results.size;
-  const failed = stocks.length - updated;
-
   console.log(
-    `[prices] refresh done: ${updated} updated (${fromFinnhub} finnhub, ${fromYahoo} yahoo), ${failed} failed out of ${stocks.length}`
+    `[prices] refresh done: ${priceMap.size} priced (${fromFinnhub} finnhub, ${fromYahoo} yahoo), ` +
+      `${pbMap.size} with P/B`
   );
+
   return NextResponse.json({
-    updated,
-    failed,
+    priced: priceMap.size,
+    withPb: pbMap.size,
     total: stocks.length,
     fromFinnhub,
     fromYahoo,
