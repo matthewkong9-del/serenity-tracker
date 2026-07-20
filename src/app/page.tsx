@@ -189,6 +189,17 @@ export default function Home() {
         >
           {refreshingPrices ? "Refreshing..." : "Refresh Prices"}
         </button>
+        {costs?.pending?.unverifiedClaims > 0 && (
+          <button
+            onClick={researchClaims}
+            disabled={researchingClaims}
+            className="text-xs bg-accent text-bg px-3 py-2 rounded-lg hover:bg-accent/90 transition disabled:opacity-50"
+          >
+            {researchingClaims
+              ? "Researching..."
+              : `Research 10 (${costs.pending.unverifiedClaims} left)`}
+          </button>
+        )}
       </div>
 
       {/* Running costs — collapsible */}
@@ -237,18 +248,9 @@ export default function Home() {
                   Brave API: {costs.braveToday} / 2,000 free today
                 </span>
                 {costs.pending.unverifiedClaims > 0 && (
-                  <>
-                    <span className="text-amber-400">
-                      ⏳ {costs.pending.unverifiedClaims} claims pending · ~${costs.pending.estimatedCost} to research
-                    </span>
-                    <button
-                      onClick={researchClaims}
-                      disabled={researchingClaims}
-                      className="bg-accent text-bg text-[10px] px-3 py-1 rounded hover:bg-accent/90 transition disabled:opacity-50"
-                    >
-                      {researchingClaims ? "Researching..." : "Research 10"}
-                    </button>
-                  </>
+                  <span className="text-amber-400">
+                    ⏳ {costs.pending.unverifiedClaims} claims pending · ~${costs.pending.estimatedCost} to research
+                  </span>
                 )}
               </div>
             </div>
