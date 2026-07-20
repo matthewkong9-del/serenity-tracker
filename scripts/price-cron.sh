@@ -11,7 +11,8 @@ TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 RESPONSE=$(curl -s -X POST "$APP_URL/api/prices/refresh" --max-time 300 2>&1) || true
 
-UPDATED=$(echo "$RESPONSE" | grep -o '"updated":[0-9]*' | grep -o '[0-9]*' || echo "?")
+PRICED=$(echo "$RESPONSE" | grep -o '"priced":[0-9]*' | grep -o '[0-9]*' || echo "?")
 FAILED=$(echo "$RESPONSE" | grep -o '"failed":[0-9]*' | grep -o '[0-9]*' || echo "?")
+FMPB=$(echo "$RESPONSE" | grep -o '"withPb":[0-9]*' | grep -o '[0-9]*' || echo "?")
 
-echo "[$TIMESTAMP] updated=$UPDATED failed=$FAILED" >> "$LOG_FILE"
+echo "[$TIMESTAMP] priced=$PRICED withPb=$FMPB failed=$FAILED" >> "$LOG_FILE"
