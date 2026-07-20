@@ -23,6 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/tweets" className="text-sm text-muted hover:text-fg transition">
                 Tweets
               </a>
+              <a href="/research" className="text-sm text-muted hover:text-fg transition">
+                Research
+              </a>
               <a href="/log" className="text-sm text-muted hover:text-fg transition">
                 Log
               </a>
