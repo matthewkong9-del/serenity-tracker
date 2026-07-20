@@ -7,10 +7,14 @@ export const dynamic = "force-dynamic";
 
 /** Lightweight endpoint for nav notification badges. Cached for 30s in the browser. */
 export async function GET() {
-  const [claims, stocks, decisions] = await Promise.all([
-    prisma.claim.groupBy({
-      by: ["status"],
-      _count: true,
+  const [unresearchedClaims, stocks, decisions] = await Promise.all([
+    // Only count claims that haven't been researched yet — not ones already
+    // researched but left "unverified" (verdict was unclear).
+    prisma.claim.count({
+      where: {
+        status: "unverified",
+        researchStatus: { in: ["pending", "failed"] },
+      },
     }),
     prisma.stock.count({
       where: { extractionError: { not: null } },
@@ -20,17 +24,14 @@ export async function GET() {
     }),
   ]);
 
-  const counts: Record<string, number> = {};
-  for (const c of claims) {
-    counts[c.status] = c._count;
-  }
+  const totalClaims = await prisma.claim.count();
 
   return NextResponse.json(
     {
-      unverifiedClaims: counts.unverified || 0,
+      unverifiedClaims: unresearchedClaims,
       stocksWithErrors: stocks,
       actionableDecisions: decisions,
-      totalClaims: Object.values(counts).reduce((a, b) => a + b, 0),
+      totalClaims,
     },
     {
       headers: {

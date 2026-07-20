@@ -21,7 +21,7 @@ export function NavBadges() {
     <div className="flex items-center gap-3">
       {badges.unverifiedClaims > 0 && (
         <span className="text-xs bg-amber-400/10 text-amber-400 border border-amber-400/20 rounded-full px-2 py-0.5">
-          {badges.unverifiedClaims} unchecked
+          {badges.unverifiedClaims} to research
         </span>
       )}
       {badges.stocksWithErrors > 0 && (
