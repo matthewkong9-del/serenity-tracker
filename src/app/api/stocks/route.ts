@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
         ticker: ticker.toUpperCase().trim(),
         name: name?.trim() || null,
         sector: sector?.trim() || null,
-        notes: notes?.trim() || null,
+        generalNotes: notes?.trim() || null,
       },
     });
     return NextResponse.json(stock, { status: 201 });

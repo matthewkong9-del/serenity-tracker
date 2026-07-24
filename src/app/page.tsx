@@ -62,30 +62,81 @@ export default function Home() {
     );
   }
 
+  // Shared parent-sector mapping for both filter buttons AND filtering logic
+  const parentMap: Record<string, string> = {
+    "Semiconductors": "Semiconductors",
+    "Semiconductor": "Semiconductors",
+    "Semiconductors (Foundry)": "Semiconductors",
+    "Semiconductors (Memory)": "Semiconductors",
+    "Semiconductors (Power/SiC)": "Semiconductors",
+    "Semiconductors (IP)": "Semiconductors",
+    "Semiconductors (Connectivity)": "Semiconductors",
+    "Semiconductors (Epiwafers)": "Semiconductors",
+    "Semiconductors (Substrates)": "Semiconductors",
+    "Semiconductors / AI": "Semiconductors",
+    "Semiconductors / Electronics": "Semiconductors",
+    "Semiconductor Equipment": "Semiconductor Equipment",
+    "Semiconductor Equipment (Test)": "Semiconductor Equipment",
+    "Semiconductor Equipment (Test/Burn-in)": "Semiconductor Equipment",
+    "Semiconductor Equipment (MBE)": "Semiconductor Equipment",
+    "Laser / Semiconductor Equipment": "Semiconductor Equipment",
+    "Optical Components": "Optical / Photonics",
+    "Photonics / Optical Components": "Optical / Photonics",
+    "Photonics": "Optical / Photonics",
+    "Electronic Components": "Electronic Components",
+    "Electronic Components (MLCC)": "Electronic Components",
+    "Passive Components": "Electronic Components",
+    "Electrical Equipment": "Electrical Equipment",
+    "Software": "Software / Cloud",
+    "Software / Cloud": "Software / Cloud",
+    "IT Services": "Software / Cloud",
+    "Data Center / Bitcoin Mining": "Data Center / Mining",
+    "Data Center Infrastructure": "Data Center / Mining",
+    "Data Center / AI Infrastructure": "Data Center / Mining",
+    "Data Center / AI Cloud": "Data Center / Mining",
+    "AI Infrastructure / Data Center": "Data Center / Mining",
+    "AI Infrastructure / Semiconductors": "Semiconductors",
+    "Cloud / AI Infrastructure": "Data Center / Mining",
+    "Bitcoin Mining": "Data Center / Mining",
+    "Industrial Robotics": "Industrial / Robotics",
+    "Precision Motion Control / Robotics": "Industrial / Robotics",
+    "Automotive": "Automotive",
+    "Automotive LiDAR": "Automotive",
+    "ETF": "ETF",
+    "Energy": "Energy",
+    "Financial Services": "Financial Services",
+    "Technology": "Technology",
+    "Social Media": "Social Media",
+    "Internet / Technology": "Technology",
+    "Artificial Intelligence": "Technology",
+    "Private / Pre-IPO": "Private / Pre-IPO",
+    "Aerospace": "Aerospace",
+    "Networking": "Networking",
+    "PCB Manufacturing": "PCB Manufacturing",
+    "CCL Manufacturing": "CCL Manufacturing",
+    "IC Packaging Substrates": "IC Packaging Substrates",
+    "Semiconductor Packaging": "Semiconductor Packaging",
+    "Semiconductor Packaging & Testing": "Semiconductor Packaging & Testing",
+    "Semiconductor Materials": "Semiconductor Materials",
+    "Semiconductor Wafers": "Semiconductor Wafers",
+    "Compound Semiconductor Foundry": "Semiconductors",
+    "Memory ICs": "Semiconductors",
+    "NAND Controllers": "Semiconductors",
+    "Wire/Cable & Optical": "Networking",
+    "Server ODM": "Data Center / Mining",
+    "Electronics ODM": "Electronic Components",
+    "Electronics Manufacturing Services": "Electronic Components",
+    "Power Electronics": "Electrical Equipment",
+    "Specialty Chemicals": "Specialty Chemicals",
+    "Specialty Chemicals (WF6/Tungsten)": "Specialty Chemicals",
+    "PCB Materials": "PCB Manufacturing",
+    "Chemicals": "Specialty Chemicals",
+    "Materials": "Specialty Chemicals",
+    "Holding Company": "Technology",
+  };
+
   // Normalize and group sectors — only show groups with 2+ stocks
   const sectors = useMemo(() => {
-    const parentMap: Record<string, string> = {
-      "Semiconductors": "Semiconductors",
-      "Semiconductor": "Semiconductors",
-      "Semiconductors (Foundry)": "Semiconductors",
-      "Semiconductors (Memory)": "Semiconductors",
-      "Semiconductor Equipment": "Semiconductor Equipment",
-      "Optical Components": "Optical / Photonics",
-      "Photonics / Optical Components": "Optical / Photonics",
-      "Electronic Components": "Electronic Components",
-      "Electrical Equipment": "Electrical Equipment",
-      "Software": "Software / Cloud",
-      "Software / Cloud": "Software / Cloud",
-      "IT Services": "Software / Cloud",
-      "Data Center / Bitcoin Mining": "Data Center / Mining",
-      "Industrial Robotics": "Industrial / Robotics",
-      "Automotive": "Automotive",
-      "ETF": "ETF",
-      "Energy": "Energy",
-      "Financial Services": "Financial Services",
-      "Technology": "Technology",
-      "Social Media": "Social Media",
-    };
     const groups: Record<string, number> = {};
     for (const s of stocks) {
       if (!s.sector) continue;
@@ -102,19 +153,6 @@ export default function Home() {
   // Map each stock's sector to its parent for filtering
   const parentSector = (s: StockCard): string | null => {
     if (!s.sector) return null;
-    const parentMap: Record<string, string> = {
-      "Semiconductors": "Semiconductors",
-      "Semiconductor": "Semiconductors",
-      "Semiconductors (Foundry)": "Semiconductors",
-      "Semiconductors (Memory)": "Semiconductors",
-      "Optical Components": "Optical / Photonics",
-      "Photonics / Optical Components": "Optical / Photonics",
-      "Software": "Software / Cloud",
-      "Software / Cloud": "Software / Cloud",
-      "IT Services": "Software / Cloud",
-      "Data Center / Bitcoin Mining": "Data Center / Mining",
-      "Industrial Robotics": "Industrial / Robotics",
-    };
     return parentMap[s.sector] || s.sector;
   };
 
