@@ -16,10 +16,16 @@ export async function GET(req: NextRequest) {
 
   // Build where clause
   const where: any = {};
-  if (filter === "pending")
+  if (filter === "pending") {
+    // Only claims that still need research: unverified AND pending/failed.
+    // Claims the user already verified (supported/refuted) don't need research.
+    where.status = "unverified";
     where.researchStatus = { in: ["pending", "failed"] };
-  else if (filter === "done") where.researchStatus = "done";
-  else if (filter === "researching") where.researchStatus = "researching";
+  } else if (filter === "done") {
+    where.researchStatus = "done";
+  } else if (filter === "researching") {
+    where.researchStatus = "researching";
+  }
   if (stock) where.stock = { ticker: stock.toUpperCase() };
 
   const [claims, counts] = await Promise.all([
@@ -35,10 +41,13 @@ export async function GET(req: NextRequest) {
       ],
       take: limit,
     }),
-    // Counts for filter pills
+    // Counts for filter pills — consistent with nav badge
     Promise.all([
       prisma.claim.count({
-        where: { researchStatus: { in: ["pending", "failed"] } },
+        where: {
+          status: "unverified",
+          researchStatus: { in: ["pending", "failed"] },
+        },
       }),
       prisma.claim.count({ where: { researchStatus: "done" } }),
       prisma.claim.count({ where: { researchStatus: "researching" } }),

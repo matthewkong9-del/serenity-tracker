@@ -22,7 +22,7 @@ const PROVIDERS: Record<string, ProviderConfig> = {
   deepseek: {
     label: "DeepSeek",
     endpoint: "https://api.deepseek.com/chat/completions",
-    defaultModel: "deepseek-chat",
+    defaultModel: "deepseek-v4-pro",
     apiKeyEnv: "DEEPSEEK_API_KEY",
   },
   zai: {

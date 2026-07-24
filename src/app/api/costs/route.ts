@@ -45,13 +45,13 @@ export async function GET() {
     bySource[l.source] = (bySource[l.source] || 0) + (l.estimatedCost || 0);
   }
 
-  // Pending: count unverified claims and estimate research cost
-  const claimCounts = await prisma.claim.groupBy({
-    by: ["status"],
-    _count: true,
+  // Pending: count claims that still need research (unverified + not yet researched)
+  const unverifiedCount = await prisma.claim.count({
+    where: {
+      status: "unverified",
+      researchStatus: { in: ["pending", "failed"] },
+    },
   });
-  const unverifiedCount =
-    claimCounts.find((c) => c.status === "unverified")?._count ?? 0;
   const estimatedResearchCost = (unverifiedCount * 0.007).toFixed(2); // ~$0.007/claim
 
   return NextResponse.json({
