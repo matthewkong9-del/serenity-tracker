@@ -15,5 +15,8 @@ data/*
 # Uploaded files (runtime data)
 public/uploads/
 
+# Runtime logs
+*.log
+
 # TypeScript incremental builds
 *.tsbuildinfo
