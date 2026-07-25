@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ticker: str
 
 export async function PUT(req: NextRequest, { params }: { params: { ticker: string } }) {
   const body = await req.json();
-  const { name, sector, notes } = body;
+  const { name, sector, notes, narrative } = body;
 
   try {
     const stock = await prisma.stock.update({
@@ -30,6 +30,7 @@ export async function PUT(req: NextRequest, { params }: { params: { ticker: stri
         name: name?.trim() || null,
         sector: sector?.trim() || null,
         generalNotes: notes?.trim() || null,
+        narrative: narrative !== undefined ? narrative : undefined,
       },
     });
     return NextResponse.json(stock);

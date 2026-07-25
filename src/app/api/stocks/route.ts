@@ -13,6 +13,9 @@ export async function GET() {
       summary: true,
       currentPrice: true,
       pbRatio: true,
+      marketCap: true,
+      chokepointDepth: true,
+      narrative: true,
       lastPriceUpdated: true,
       updatedAt: true,
       _count: { select: { files: true, notes: true, claims: true } },
@@ -34,13 +37,15 @@ export async function GET() {
     }
 
     const bucket: OpportunityBucket = assignBucket({
+      chokepointDepth: s.chokepointDepth,
       pbRatio: s.pbRatio,
+      marketCap: s.marketCap,
+      currentPrice: s.currentPrice,
       summary: s.summary,
       totalClaims: s._count.claims,
       supportedClaims: counts.supported,
       refutedClaims: counts.refuted,
-      currentPrice: s.currentPrice,
-    } as any);
+    });
 
     const { claims: _, ...rest } = s;
     return {

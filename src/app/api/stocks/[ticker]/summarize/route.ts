@@ -1,4 +1,5 @@
 import { summarizeStock } from "@/lib/summarize";
+import { generateNarrative } from "@/lib/narrative";
 import { runExtractions } from "@/lib/relationships";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -15,6 +16,11 @@ export async function POST(_req: NextRequest, { params }: { params: { ticker: st
 
     // Re-extract relationships and contrarian angles after new summary
     runExtractions(ticker, apiKey);
+
+    // Generate the knowledge base narrative (fire-and-forget — summary is already saved)
+    void generateNarrative(ticker, apiKey).catch((e) =>
+      console.error(`[narrative] generation for ${ticker} failed: ${e.message}`)
+    );
 
     return NextResponse.json({ summary });
   } catch (e: any) {

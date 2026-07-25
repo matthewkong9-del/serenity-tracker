@@ -21,9 +21,10 @@ export async function POST() {
     select: { id: true, ticker: true, sector: true },
   });
 
-  // Track price and P/B independently
+  // Track price, P/B, and market cap independently
   const priceMap = new Map<number, { price: number; source: string }>();
   const pbMap = new Map<number, number>();
+  const mcapMap = new Map<number, number>();
 
   // ── Phase 1: Finnhub (rate-limited: 60 calls/min) ──
   for (let i = 0; i < stocks.length; i++) {
@@ -38,6 +39,9 @@ export async function POST() {
       // Capture P/B even when price failed — metrics endpoint is independent
       if (m.pbRatio !== null) {
         pbMap.set(s.id, m.pbRatio);
+      }
+      if (m.marketCap !== null) {
+        mcapMap.set(s.id, m.marketCap);
       }
     } catch (e: any) {
       console.warn(`[prices] finnhub failed for ${s.ticker}: ${e.message}`);
@@ -79,6 +83,7 @@ export async function POST() {
         data: {
           currentPrice: pd?.price ?? undefined,
           pbRatio: pb,
+          marketCap: mcapMap.get(s.id) ?? undefined,
           lastPriceUpdated: new Date(),
         },
       });

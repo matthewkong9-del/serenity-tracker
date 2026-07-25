@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { chatJson } from "@/lib/deepseek";
 import { runExtractions } from "@/lib/relationships";
 import { researchNewClaims } from "@/lib/research";
+import { logPipelineRun } from "@/lib/pipeline-log";
+import { notifyNewTweet } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 
@@ -33,45 +35,48 @@ async function extractClaimsFromTweet(
   apiKey: string
 ): Promise<{
   tickers: { symbol: string; name?: string; sector?: string }[];
-  claims: { ticker: string; text: string; confidence: number }[];
+  claims: { ticker: string; text: string; confidence: number; impactScore: number; insightType: string }[];
   concepts: { name: string; description?: string; category?: string }[];
+  insights: { name: string; description: string; category: string }[];
 }> {
   const prompt = `You are an investment research assistant. Analyze this tweet/thread from a smart investor named "Serenity" (@aleaboreddit).
+
+Serenity's methodology: find chokepoints in the supply chain, companies with pricing power, asymmetric setups, and structural advantages the market hasn't priced in.
 
 Your job: extract structured data for a due diligence system.
 
 1. **Tickers**: Identify EVERY stock ticker or company mentioned, including:
-   - $TICKER format (e.g., $AAPL, $NVDA)
-   - Korean/Japanese tickers (e.g., 093370, 2316 TW)
-   - Company names without $ (e.g., "Foosung", "Wistron", "Delta Electronics")
-   For each, provide: symbol (normalized, no $), name if mentioned, sector if inferrable.
+   - $TICKER format ($AAPL, $NVDA)
+   - Korean/Japanese tickers (093370, 2316 TW)
+   - Company names without $ ("Foosung", "Wistron", "Delta Electronics")
+   For each: symbol (normalized, no $), name if mentioned, sector if inferrable.
 
-2. **Claims**: Extract specific, FALSIFIABLE claims. A claim must be something that can be verified or refuted with data. Skip:
-   - Opinions ("this stock is great")
-   - Jokes, memes, personal insults
-   - Price predictions without rationale
-   - Vague statements
+2. **Claims**: Extract specific, FALSIFIABLE claims. Skip opinions, jokes, price predictions without rationale, and vague statements.
 
-   Include claims like:
-   - "80% of major players selected LPKF equipment"
-   - "AMD scrambling for CW laser supply"
-   - "China eased InP substrate exports"
-   - "NASDAQ listing actively on their radar"
-   - "WUS owns 11.26% of WUS Kunshan worth $4.42B"
+   For each claim also provide:
+   - **confidence** (1-5): How sure are you that this claim is accurately extracted?
+     5 = near-exact quote, 1 = very uncertain reading
+   - **impactScore** (1-5): How important is this claim for an investment decision?
+     5 = reveals a chokepoint (sole supplier, supply bottleneck, regulatory gate), pricing power shift, or major competitive moat
+     4 = specific supply chain position, customer/supplier concentration, capacity signal
+     3 = meaningful financial data, market share, or growth signal
+     2 = general industry observation, moderately useful
+     1 = vague directionality, low information value
+   - **insightType**: Label what kind of insight this claim represents:
+     "chokepoint" = sole supplier, supply bottleneck, regulatory gate, limited substitutes
+     "dependency" = customer concentration, supplier concentration, single-point-of-failure
+     "pricing_power" = ability to raise prices, margin expansion, cost pass-through
+     "moat_signal" = IP, technology lead, scale advantage, network effects, switching costs
+     "risk_factor" = dilution, regulatory risk, counterparty risk, macro exposure
+     "general" = none of the above
 
-   For each claim, SELF-RATE your confidence that the claim is accurately extracted (1-5):
-   - 5 = directly quoted or near-exact paraphrase from the tweet, clear ticker attribution
-   - 4 = strong evidence in the tweet, minor ambiguity
-   - 3 = reasonable inference but some ambiguity in wording or ticker
-   - 2 = speculative reading, multiple interpretations possible
-   - 1 = very uncertain — could easily be wrong
+3. **Concepts** (descriptive tags): Key technologies, supply chain dynamics, investment themes. Short labels. These describe WHAT the tweet is about.
 
-3. **Concepts**: Extract key technologies, supply chain relationships, investment themes, and other notable concepts. These are NOT stocks — they are the ideas, technologies, and dynamics that connect everything. Include:
-   - Technologies ("Silicon Photonics", "HBM", "CW Laser", "InP Substrates", "Glass substrates")
-   - Supply chain dynamics ("OSAT consolidation", "China export controls", "NVIDIA supply chain")
-   - Investment themes ("optical interconnect", "AI capex cycle", "semiconductor equipment boom")
-   - Notable private companies, products, or events
-   For each concept, provide a short name and 1-sentence description from context. Categorize as: Technology, Supply Chain, Market Theme, Product, or Other.
+4. **Insights** (structural findings): Specific observations about market structure, competitive dynamics, or supply chain architecture. These are NOT just tags — they capture a structural RELATIONSHIP or POSITION. Examples:
+   - "LPKF is the sole qualified supplier of glass-substrate laser drilling equipment for advanced packaging"
+   - "WUS Kunshan subsidiary alone is worth more than WUS's entire market cap"
+   - "AMD and NVDA competing for the same limited CW laser supply, creating a bottleneck"
+   - "Foosung is the only domestic Korean source of WF6, a critical gas for semiconductor manufacturing"
 
 Return ONLY valid JSON, no markdown, no explanation:
 {
@@ -79,14 +84,17 @@ Return ONLY valid JSON, no markdown, no explanation:
     {"symbol": "LPKF", "name": "LPKF Laser & Electronics", "sector": "Semiconductor Equipment"}
   ],
   "claims": [
-    {"ticker": "LPKF", "text": "80% of major global players selected LPKF equipment", "confidence": 5}
+    {"ticker": "LPKF", "text": "80% of major global players selected LPKF equipment", "confidence": 5, "impactScore": 5, "insightType": "chokepoint"}
   ],
   "concepts": [
-    {"name": "Silicon Photonics", "description": "Photonic integrated circuit technology for optical interconnects", "category": "Technology"}
+    {"name": "Glass Substrates", "description": "Next-gen substrate technology replacing silicon interposers", "category": "Technology"}
+  ],
+  "insights": [
+    {"name": "LPKF is sole-source for glass substrate laser drilling", "description": "No other company has qualified laser drilling equipment for glass substrate advanced packaging, giving LPKF a temporary monopoly on a critical process step", "category": "Chokepoint"}
   ]
 }
 
-If no tickers, claims, or concepts found, return empty arrays.
+If nothing found, return empty arrays.
 
 Tweet timestamp: ${timestamp || "unknown"}
 Tweet content:
@@ -94,8 +102,9 @@ ${content.slice(0, 8000)}`;
 
   return chatJson<{
     tickers: { symbol: string; name?: string; sector?: string }[];
-    claims: { ticker: string; text: string; confidence: number }[];
+    claims: { ticker: string; text: string; confidence: number; impactScore: number; insightType: string }[];
     concepts: { name: string; description?: string; category?: string }[];
+    insights: { name: string; description: string; category: string }[];
   }>([{ role: "user", content: prompt }], apiKey, { purpose: "claim_extraction" });
 }
 
@@ -194,6 +203,8 @@ export async function POST(req: NextRequest) {
   let skippedTweets = 0;
   let totalClaims = 0;
   const newStocks: string[] = [];
+  const newTweetIds: number[] = []; // track new tweet IDs for Telegram notification
+  let lastNewTweetContent = "";
   const errors: { index: number; error: string }[] = [];
   // Stocks that received NEW claims from NEW tweets this sync — only these need
   // their relationship map re-extracted.
@@ -220,6 +231,17 @@ export async function POST(req: NextRequest) {
     });
 
     newTweets++;
+    newTweetIds.push(tweet.id);
+    lastNewTweetContent = row.content;
+
+    // Log ingest
+    await logPipelineRun({
+      stage: "ingest",
+      status: "completed",
+      tweetId: tweet.id,
+      input: { timestamp: row.timestamp },
+      decision: "Tweet saved and deduped.",
+    });
 
     // Pre-filter: skip non-investing tweets before expensive claim extraction
     let investing = true;
@@ -237,7 +259,15 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (!investing) continue;
+    if (!investing) {
+      await logPipelineRun({
+        stage: "extract",
+        status: "skipped",
+        tweetId: tweet.id,
+        decision: "Tweet classified as non-investing — skipped extraction.",
+      });
+      continue;
+    }
 
     // Extract claims via LLM
     try {
@@ -276,6 +306,8 @@ export async function POST(req: NextRequest) {
             tweetId: tweet.id,
             text: c.text,
             extractionConfidence: c.confidence,
+            impactScore: c.impactScore || null,
+            insightType: c.insightType || null,
             source: row.timestamp
               ? `Serenity tweet ${new Date(row.timestamp).toLocaleDateString()}`
               : "Serenity tweet",
@@ -285,6 +317,20 @@ export async function POST(req: NextRequest) {
         newlyAffectedTickers.add(symbol);
       }
 
+      // Log extraction
+      await logPipelineRun({
+        stage: "extract",
+        status: "completed",
+        tweetId: tweet.id,
+        input: { tweetContent: row.content.slice(0, 200) },
+        output: {
+          claimCount: tweetClaims,
+          tickerCount: result.tickers.length,
+          conceptCount: result.concepts?.length || 0,
+        },
+        decision: `Extracted ${tweetClaims} claims across ${result.tickers.length} ticker(s).`,
+      });
+
       if (tweetClaims > 0) {
         await prisma.tweet.update({
           where: { id: tweet.id },
@@ -293,7 +339,7 @@ export async function POST(req: NextRequest) {
         totalClaims += tweetClaims;
       }
 
-      // Save concepts
+      // Save concepts (descriptive tags — type "tag")
       for (const c of result.concepts || []) {
         if (!c.name || c.name.length > 100) continue;
 
@@ -307,6 +353,45 @@ export async function POST(req: NextRequest) {
               name: c.name,
               description: c.description?.slice(0, 500) || null,
               category: c.category?.trim() || null,
+              type: "tag",
+            },
+          });
+        }
+
+        if (concept) {
+          const existingLink = await prisma.tweetConcept.findUnique({
+            where: { tweetId_conceptId: { tweetId: tweet.id, conceptId: concept.id } },
+          });
+          if (!existingLink) {
+            await prisma.tweetConcept.create({
+              data: { tweetId: tweet.id, conceptId: concept.id },
+            });
+          }
+        }
+      }
+
+      // Save insights (structural findings — type "insight")
+      for (const ins of result.insights || []) {
+        if (!ins.name || ins.name.length > 100) continue;
+
+        const existing = await prisma.concept.findUnique({ where: { name: ins.name } });
+        let concept;
+        if (existing) {
+          concept = existing;
+          // If an existing tag is now also an insight, upgrade its type
+          if (existing.type === "tag") {
+            await prisma.concept.update({
+              where: { id: existing.id },
+              data: { type: "insight", description: ins.description?.slice(0, 500) || existing.description },
+            });
+          }
+        } else {
+          concept = await prisma.concept.create({
+            data: {
+              name: ins.name,
+              description: ins.description?.slice(0, 500) || null,
+              category: ins.category?.trim() || null,
+              type: "insight",
             },
           });
         }
@@ -327,17 +412,53 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── Notify user via Telegram if configured ──
+  const telegramConfigured = !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
+
+  if (telegramConfigured && totalClaims > 0 && newTweetIds.length > 0) {
+    // Collect the newly extracted claims for the notification
+    const newClaimRows = await prisma.claim.findMany({
+      where: { tweetId: { in: newTweetIds } },
+      orderBy: { id: "asc" },
+      select: { id: true, text: true, stock: { select: { ticker: true } }, impactScore: true, insightType: true },
+    });
+
+    const notificationClaims = newClaimRows.map((c) => ({
+      claimId: c.id,
+      ticker: c.stock.ticker,
+      text: c.text,
+      impactScore: c.impactScore,
+      insightType: c.insightType,
+    }));
+
+    // Store the mapping so we can later parse user orders like "research 1 2"
+    await logPipelineRun({
+      stage: "triage",
+      status: "started",
+      output: {
+        pendingClaims: notificationClaims.map((c, i) => ({
+          index: i + 1,
+          claimId: c.claimId,
+          ticker: c.ticker,
+        })),
+      },
+      decision: `Awaiting user orders for ${notificationClaims.length} new claims.`,
+    });
+
+    // Send the notification (fire-and-forget)
+    void notifyNewTweet(lastNewTweetContent, notificationClaims).catch((e) =>
+      console.error("[sync] telegram notify failed:", e)
+    );
+  }
+
   // Re-extract relationships ONLY for stocks that received new claims this sync
-  // (not every tweet already in the DB). This runs in the background so the sync
-  // response returns immediately — tweets and claims are already persisted, and
-  // the relationship mind map updates on the next stock-page load.
   void runRelationshipExtractions(Array.from(newlyAffectedTickers), apiKey).catch((e) => {
     console.error("[sync] background relationship extraction failed:", e);
   });
 
   // Agent 2: Research new claims in the background.
-  // Only fires when there are actually new claims to research.
-  if (newlyAffectedTickers.size > 0) {
+  // SKIP if Telegram is configured — the user will give orders via Telegram.
+  if (!telegramConfigured && newlyAffectedTickers.size > 0) {
     void researchNewClaims(Array.from(newlyAffectedTickers), apiKey).catch((e) => {
       console.error("[sync] background claim research failed:", e);
     });

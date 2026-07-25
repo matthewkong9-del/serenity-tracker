@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { chatJson } from "@/lib/deepseek";
+import { logPipelineRun } from "@/lib/pipeline-log";
 
 interface RelationshipExtract {
   type: string;
@@ -205,35 +206,74 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
   const context = await buildContextForStock(ticker);
   if (!context) return;
 
-  const prompt = buildRelationshipPrompt(ticker, context);
-
-  const result = await chatJson<{
-    relationships: RelationshipExtract[];
-  }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.2, purpose: "relationship" });
-
-  if (!result.relationships || result.relationships.length === 0) return;
-
   const stock = await prisma.stock.findUnique({ where: { ticker } });
   if (!stock) return;
 
-  // Replace only map-section relationships
-  await prisma.relationship.deleteMany({
-    where: { stockId: stock.id, section: "known" },
+  const prompt = buildRelationshipPrompt(ticker, context);
+
+  await logPipelineRun({
+    stage: "relationship",
+    status: "started",
+    stockTicker: ticker,
+    stockId: stock.id,
+    input: { section: "known" },
   });
 
-  await prisma.relationship.createMany({
-    data: result.relationships.map((r) => ({
+  try {
+    const result = await chatJson<{
+      relationships: RelationshipExtract[];
+    }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.2, purpose: "relationship" });
+
+    if (!result.relationships || result.relationships.length === 0) {
+      await logPipelineRun({
+        stage: "relationship",
+        status: "completed",
+        stockTicker: ticker,
+        stockId: stock.id,
+        output: { count: 0 },
+        decision: "No relationships found.",
+      });
+      return;
+    }
+
+    // Replace only map-section relationships
+    await prisma.relationship.deleteMany({
+      where: { stockId: stock.id, section: "known" },
+    });
+
+    await prisma.relationship.createMany({
+      data: result.relationships.map((r) => ({
+        stockId: stock.id,
+        type: (r.type || "other").toLowerCase().trim().slice(0, 50),
+        target: (r.target || "Unknown").trim().slice(0, 200),
+        description: r.description?.trim()?.slice(0, 500) || null,
+        sources: r.sources?.trim()?.slice(0, 500) || null,
+        sourceConfidence: ["confirmed", "speculative", "gap"].includes(r.sourceConfidence)
+          ? r.sourceConfidence
+          : "speculative",
+        section: "known",
+      })),
+    });
+
+    await logPipelineRun({
+      stage: "relationship",
+      status: "completed",
+      stockTicker: ticker,
       stockId: stock.id,
-      type: (r.type || "other").toLowerCase().trim().slice(0, 50),
-      target: (r.target || "Unknown").trim().slice(0, 200),
-      description: r.description?.trim()?.slice(0, 500) || null,
-      sources: r.sources?.trim()?.slice(0, 500) || null,
-      sourceConfidence: ["confirmed", "speculative", "gap"].includes(r.sourceConfidence)
-        ? r.sourceConfidence
-        : "speculative",
-      section: "known",
-    })),
-  });
+      output: { count: result.relationships.length },
+      decision: `Extracted ${result.relationships.length} relationships.`,
+    });
+  } catch (e: any) {
+    await logPipelineRun({
+      stage: "relationship",
+      status: "failed",
+      stockTicker: ticker,
+      stockId: stock.id,
+      error: e.message?.slice(0, 500) || "Unknown error",
+      decision: "Relationship extraction failed.",
+    });
+    throw e;
+  }
 }
 
 export async function extractContrarianAngles(ticker: string, apiKey: string): Promise<void> {

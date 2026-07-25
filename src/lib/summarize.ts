@@ -1,49 +1,86 @@
 import { prisma } from "@/lib/db";
 import { chat } from "@/lib/deepseek";
+import { logPipelineRun } from "@/lib/pipeline-log";
 
 const SYSTEM_PROMPT = (
   ticker: string
-) => `You are a skeptical analyst. You work for the user, NOT for Serenity. Serenity's tweets are opinions — documents are evidence. Your job: stress-test his thesis.
+) => `You are a skeptical supply-chain analyst. You work for the user, NOT for Serenity. Serenity's tweets are low-reliability opinions — uploaded documents are high-reliability evidence. Your job: find the CHOKEPOINTS.
 
-Be CONCISE. Use short bullets. No paragraphs over 3 lines. The user wants to scan, not study.
+Serenity's methodology (follow this):
+1. Start from physical reality — is demand real and growing? What do the numbers say?
+2. Map the supply chain — who depends on $${ticker}? Who does $${ticker} depend on?
+3. Find the chokepoints — sole suppliers, high barriers, limited substitutes, regulatory gates
+4. Look for asymmetric setups — small/mid-cap with hyperscaler exposure, ignored by market
+5. Stress-test ruthlessly — what kills this thesis?
+
+Be CONCISE. Short bullets. No paragraphs over 3 lines.
 
 Data sources (by reliability):
-- [TWEETS] = Serenity's speculation (low)
-- [CLAIMS] = extracted from tweets, pre-marked: ✅SUPPORTED / ⚠️UNVERIFIED / ❌REFUTED / 🔶DISPUTED
-- [DOCUMENTS] = uploaded files — actual evidence (high)
+- [TWEETS] = Serenity's speculation (LOW reliability — treat as hypotheses to test)
+- [CLAIMS] = extracted from tweets, marked: ✅SUPPORTED / ⚠️UNVERIFIED / ❌REFUTED / 🔶DISPUTED
+- [RELATIONSHIPS] = AI-extracted supply chain map, competitor/partner/supplier/moat/gap
+- [CONTRARIAN] = AI-extracted devil's advocate angles
+- [DOCUMENTS] = uploaded files (HIGH reliability — actual evidence)
 - [NOTES] = user's research
 
-FORMAT — keep it clean and scannable:
+FORMAT:
 
 # $${ticker}
 
 **Stance:** 🟢 Bullish / 🔴 Bearish / 🟡 Neutral
 **Confidence:** X/5
-**Verdict:** STRONG BUY / SPECULATIVE / WAIT / PASS
+**Chokepoint Depth:** X/5
 
-## ✅ Supported (evidence from documents)
-- Claim: ... → Doc says: ... (source)
-- (skip this section if none)
+## Supply Chain Position
+- Where does $${ticker} sit? Upstream / midstream / downstream?
+- Who depends on them? Who do they depend on?
+- (2-3 bullets max)
 
-## ⚠️ Unverified (needs research)
-- Claim: ... → No document evidence yet
-- (skip if none)
+## Chokepoint Analysis
+- What does $${ticker} control that others NEED?
+- Sole supplier of anything? High barriers to entry? Limited substitutes?
+- Evidence quality: which claims are verified vs speculative?
+- Chokepoint depth rating explanation (1-5):
+  5 = irreplaceable sole-source, critical to entire supply chain, no substitutes
+  4 = near-sole-source, very high barriers, limited substitutes
+  3 = strong position but alternatives exist, moderate barriers
+  2 = competitive but differentiated, some moat
+  1 = commodity player, easily substituted, low barriers
 
-## ❌ Contradicted (docs disagree)
-- Claim: ... → Doc actually says: ... (source)
-- (skip if none)
+## Demand Certainty
+- Is the demand real and growing? What physical evidence?
+- End-customer demand (not just intermediate orders)
+- Secular trend or cyclical?
 
-## 🔑 Key Numbers (from documents only)
-- Revenue: ... (source)
-- Margins: ...
-- Guidance: ...
-- Risks flagged by company: ...
+## Asymmetric Setup
+- Market cap vs. opportunity size
+- Hyperscaler / giant customer exposure?
+- Ignored by market? (small cap, low coverage)
 
-## 🕳️ Gaps
-- What doc to find next (1-3 bullets max)
+## Risk / Anti-thesis
+- What kills this thesis? (use contrarian angles if available)
+- Key assumption that, if wrong, collapses the investment case
+- Bear case that smart people believe
 
-## Bottom Line
-One sentence. What's proven vs what's speculation. Should the user dig deeper or move on?`;
+## Evidence Quality
+- Verified claims: X/Y (Z%)
+- Source quality: high-tier (official filings) vs low-tier (social media)
+- Biggest gap: what do we NEED to know but DON'T?
+
+## Verdict
+**Stance:** 🟢 Bullish / 🔴 Bearish / 🟡 Neutral
+**Confidence:** X/5
+**Chokepoint Depth:** X/5
+**Bottom Line:** 1-2 sentences. What's proven vs what's speculation.`;
+
+// ── Chokepoint depth parser ────────────────────────────────────────────────
+// Extracts "**Chokepoint Depth:** X/5" or "Chokepoint Depth: X/5" from summary text.
+
+export function parseChokepointDepth(summary: string | null): number | null {
+  if (!summary) return null;
+  const match = summary.match(/(?:\*\*)?Chokepoint Depth:(?:\*\*)?\s*(\d)\/5/i);
+  return match ? parseInt(match[1]) : null;
+}
 
 interface StockWithData {
   ticker: string;
@@ -102,7 +139,31 @@ async function buildContext(stock: StockWithData): Promise<string> {
     }
   }
 
-  // 4. Notes
+  // 4. Relationships (supply chain map)
+  const relationships = await prisma.relationship.findMany({
+    where: { stock: { ticker: stock.ticker } },
+    select: { type: true, target: true, description: true, sourceConfidence: true, section: true },
+  });
+
+  const known = relationships.filter((r) => r.section === "known");
+  const contrarian = relationships.filter((r) => r.section === "contrarian");
+
+  if (known.length > 0) {
+    sections.push("--- RELATIONSHIPS (AI-extracted supply chain map) ---");
+    for (const r of known) {
+      const conf = r.sourceConfidence === "confirmed" ? "✓" : r.sourceConfidence === "gap" ? "?" : "~";
+      sections.push(`[${r.type}: ${r.target}] ${conf} ${r.description || ""}`);
+    }
+  }
+
+  if (contrarian.length > 0) {
+    sections.push("--- CONTRARIAN ANGLES (devil's advocate — what to worry about) ---");
+    for (const r of contrarian) {
+      sections.push(`[${r.type}: ${r.target}] ${r.description || ""}`);
+    }
+  }
+
+  // 5. Notes
   if (stock.notes.length > 0) {
     sections.push("--- NOTES (user's own research) ---");
     for (const entry of stock.notes) {
@@ -135,24 +196,63 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
   if (!context.trim())
     throw new Error("No content to summarize. Add tweets, files, or notes first.");
 
-  const summaryText = await chat(
-    [
-      { role: "system", content: SYSTEM_PROMPT(ticker) },
-      { role: "user", content: `DATA TO ANALYZE:\n\n${context}` },
-    ],
-    apiKey,
-    { temperature: 0.3, purpose: "summarize" }
-  );
-
-  await prisma.stock.update({
-    where: { ticker },
-    data: {
-      summary: summaryText,
-      lastSummaryAt: new Date(),
+  await logPipelineRun({
+    stage: "summarize",
+    status: "started",
+    stockTicker: ticker,
+    stockId: stock.id,
+    input: {
+      fileCount: stock.files.length,
+      noteCount: stock.notes.length,
+      claimCount: stock.claims.length,
     },
   });
 
-  return summaryText;
+  try {
+    const summaryText = await chat(
+      [
+        { role: "system", content: SYSTEM_PROMPT(ticker) },
+        { role: "user", content: `DATA TO ANALYZE:\n\n${context}` },
+      ],
+      apiKey,
+      { temperature: 0.3, purpose: "summarize" }
+    );
+
+    const chokepointDepth = parseChokepointDepth(summaryText);
+
+    await prisma.stock.update({
+      where: { ticker },
+      data: {
+        summary: summaryText,
+        lastSummaryAt: new Date(),
+        chokepointDepth,
+      },
+    });
+
+    await logPipelineRun({
+      stage: "summarize",
+      status: "completed",
+      stockTicker: ticker,
+      stockId: stock.id,
+      output: {
+        summaryLength: summaryText.length,
+        chokepointDepth,
+      },
+      decision: `Summary generated. Chokepoint depth: ${chokepointDepth ?? "not rated"}/5.`,
+    });
+
+    return summaryText;
+  } catch (e: any) {
+    await logPipelineRun({
+      stage: "summarize",
+      status: "failed",
+      stockTicker: ticker,
+      stockId: stock.id,
+      error: e.message?.slice(0, 500) || "Unknown error",
+      decision: "Summary generation failed.",
+    });
+    throw e;
+  }
 }
 
 export function needsSummary(stock: {

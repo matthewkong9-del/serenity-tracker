@@ -18,13 +18,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Serenity Tracker
               </a>
               <a href="/" className="text-sm text-muted hover:text-fg transition">
-                Dashboard
+                Knowledge Base
               </a>
               <a href="/tweets" className="text-sm text-muted hover:text-fg transition">
                 Tweets
               </a>
-              <a href="/research" className="text-sm text-muted hover:text-fg transition">
-                Research
+              <a href="/claims" className="text-sm text-muted hover:text-fg transition">
+                Claims
               </a>
               <a href="/log" className="text-sm text-muted hover:text-fg transition">
                 Log

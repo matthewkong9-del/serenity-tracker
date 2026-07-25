@@ -4,17 +4,16 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 /**
- * Portfolio has been merged into the Knowledge Base index.
- * Redirecting.
+ * Triage has been replaced by Telegram notifications + the Knowledge Base index.
+ * Redirecting to the Knowledge Base.
  */
-export default function PortfolioRedirect() {
+export default function TriageRedirect() {
   const router = useRouter();
   useEffect(() => { router.replace("/"); }, [router]);
   return (
     <div className="flex items-center justify-center py-20">
       <p className="text-sm text-muted">
-        Portfolio has merged into the{" "}
-        <a href="/" className="text-accent hover:underline">Knowledge Base</a>.
+        Triage has moved to the <a href="/" className="text-accent hover:underline">Knowledge Base</a>.
       </p>
     </div>
   );

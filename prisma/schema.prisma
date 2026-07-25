@@ -16,8 +16,11 @@ model Stock {
   summary         String?
   lastSummaryAt   DateTime?
   extractionError String?
+  chokepointDepth Int?     // 1-5: how essential is what this company controls? Set by AI summary.
+  narrative     String?    // conversational knowledge base story — generated after summarization
   currentPrice    Float?
   pbRatio         Float?
+  marketCap       Float?    // market capitalization (from Finnhub)
   lastPriceUpdated DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -77,6 +80,8 @@ model Claim {
   status     String   @default("unverified")
   evidence   String?
   extractionConfidence Int? @map("confidence") // 1-5 LLM self-rating during extraction (null = not rated)
+  impactScore    Int?    // 1-5: chokepoint relevance — how important is this claim?
+  insightType    String? // "chokepoint" | "dependency" | "pricing_power" | "moat_signal" | "risk_factor" | "general"
   researchStatus  String  @default("pending") // "pending" | "researching" | "done" | "failed"
   researchedAt    DateTime?
   createdAt       DateTime @default(now())
@@ -88,6 +93,7 @@ model Concept {
   name        String         @unique
   description String?
   category    String?
+  type        String         @default("tag") // "tag" (descriptive label) | "insight" (structural finding)
   createdAt   DateTime       @default(now())
   tweets      TweetConcept[]
 }
@@ -146,4 +152,25 @@ model ApiCallLog {
   outputChars Int?     // approximate output size (chars)
   estimatedCost Float? // USD
   createdAt   DateTime @default(now())
+}
+
+model PipelineRun {
+  id          Int      @id @default(autoincrement())
+  stage       String   // "ingest" | "extract" | "triage" | "research" | "summarize" | "relationship" | "score"
+  status      String   @default("started") // "started" | "completed" | "failed" | "skipped"
+  stockTicker String?  // ticker this run relates to (for easy querying without joins)
+  stockId     Int?     // FK to Stock
+  claimId     Int?     // FK to Claim
+  tweetId     Int?     // FK to Tweet
+
+  // What happened
+  input       String?  // JSON: key inputs before the run
+  output      String?  // JSON: results, verdicts, decisions
+  decision    String?  // Human-readable plain-English summary of what was decided
+
+  // Meta
+  cost        Float?
+  error       String?
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
 }
