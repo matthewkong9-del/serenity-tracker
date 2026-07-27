@@ -122,6 +122,7 @@ export async function chat(
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120_000), // 2 min — prevents hung PipelineRuns
   });
 
   const data = await response.json();

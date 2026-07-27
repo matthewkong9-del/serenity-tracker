@@ -5,13 +5,27 @@ import { prisma } from "@/lib/db";
 // see exactly what happened, when, and at what cost.
 
 export type PipelineStage =
-  | "ingest"     // tweet fetched from CSV, deduped, saved
-  | "extract"    // claims + insights extracted from a tweet
-  | "triage"     // impact scoring + confidence gating on a claim
-  | "research"   // claim researched against web sources
-  | "summarize"  // stock AI summary generated
-  | "relationship" // relationship map extracted
-  | "score";     // stock scored into opportunity bucket
+  | "ingest"        // tweet fetched from CSV, deduped, saved
+  | "extract"       // claims + insights extracted from a tweet
+  | "triage"        // impact scoring + confidence gating on a claim
+  | "research"      // claim researched against web sources
+  | "research-all"  // batch research run
+  | "verify"        // single claim verification
+  | "summarize"     // stock AI summary generated
+  | "narrative"     // knowledge base narrative generated
+  | "relationship"  // relationship map extracted
+  | "score"         // stock scored into opportunity bucket
+  | "sync"          // tweet sync pipeline
+  | "sync_ingest"   // tweet CSV fetch + dedup
+  | "sync_extract"  // claim extraction from new tweets
+  | "price_refresh" // daily price + fundamentals refresh
+  | "cleanup"       // dedup scan
+  | "dedup"         // duplicate removal
+  | "orchestrate"   // orchestrator tick
+  | "watchdog"      // infrastructure health scan
+  | "ops"           // auto-fix infrastructure issues
+  | "auditor"       // content quality scan
+  | "editor"        // auto-fix content issues
 
 export type RunStatus = "started" | "completed" | "failed" | "skipped";
 
@@ -31,11 +45,13 @@ export interface LogInput {
 
 /**
  * Write one row to the PipelineRun audit log.
+ * Returns the new row's ID so callers can call completePipelineRun() later
+ * to update the same row instead of creating a duplicate.
  * Never throws — logging failures must not break the pipeline.
  */
-export async function logPipelineRun(params: LogInput): Promise<void> {
+export async function logPipelineRun(params: LogInput): Promise<number | null> {
   try {
-    await prisma.pipelineRun.create({
+    const row = await prisma.pipelineRun.create({
       data: {
         stage: params.stage,
         status: params.status,
@@ -54,9 +70,11 @@ export async function logPipelineRun(params: LogInput): Promise<void> {
             : null,
       },
     });
+    return row.id;
   } catch {
     // Logging is best-effort — never let it break the caller.
     console.error("[pipeline-log] failed to write PipelineRun row");
+    return null;
   }
 }
 

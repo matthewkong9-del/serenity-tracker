@@ -51,12 +51,14 @@ function oneLineThesis(text: string | null): string | null {
   return null;
 }
 
+/** Format market cap. Finnhub returns values in millions of USD. */
 function formatMcap(m: number | null): string {
   if (!m) return "";
-  if (m >= 1e12) return `$${(m / 1e12).toFixed(1)}T`;
-  if (m >= 1e9) return `$${(m / 1e9).toFixed(1)}B`;
-  if (m >= 1e6) return `$${(m / 1e6).toFixed(0)}M`;
-  return `$${m.toFixed(0)}`;
+  // m is in millions (e.g., NVDA = 5_005_528 → $5.0T, AXTI = 3_090 → $3.1B)
+  if (m >= 1_000_000) return `$${(m / 1_000_000).toFixed(1)}T`;
+  if (m >= 1_000) return `$${(m / 1_000).toFixed(1)}B`;
+  if (m >= 1) return `$${m.toFixed(0)}M`;
+  return `$${(m * 1000).toFixed(0)}K`;
 }
 
 // ── Parent sector normalization ──

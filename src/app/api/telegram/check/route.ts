@@ -27,28 +27,37 @@ export async function POST() {
     return NextResponse.json({ processed: 0, message: "No new commands" });
   }
 
-  // 2. Find the most recent pending triage batch (index → claimId mapping)
-  const pendingRun = await prisma.pipelineRun.findFirst({
+  // ── 2. Find matching triage entries for each command ──
+  // Fetch all pending triage entries for reply matching
+  const allPending = await prisma.pipelineRun.findMany({
     where: { stage: "triage", status: "started" },
     orderBy: { startedAt: "desc" },
     select: { id: true, output: true },
   });
 
-  let pendingClaims: { index: number; claimId: number; ticker: string }[] = [];
-
-  if (pendingRun?.output) {
-    try {
-      const parsed = JSON.parse(pendingRun.output);
-      pendingClaims = parsed.pendingClaims || [];
-    } catch {
-      // output not parseable — can't map indices
-    }
-  }
-
   const results: string[] = [];
 
-  for (const command of commands) {
-    const parsed = parseResearchCommand(command, pendingClaims);
+  for (const cmd of commands) {
+    // Match triage by reply_to_message_id, or fall back to latest
+    let pendingRun = null;
+    if (cmd.replyToMessageId) {
+      pendingRun = allPending.find((r) => {
+        try {
+          const out = JSON.parse(r.output || "{}");
+          return out.telegramMessageId === cmd.replyToMessageId;
+        } catch { return false; }
+      }) || null;
+    }
+    if (!pendingRun) pendingRun = allPending[0] || null;
+
+    let pendingClaims: { index: number; claimId: number }[] = [];
+    if (pendingRun?.output) {
+      try {
+        pendingClaims = JSON.parse(pendingRun.output).pendingClaims || [];
+      } catch { /* ignore */ }
+    }
+
+    const parsed = parseResearchCommand(cmd.command, pendingClaims);
 
     if (parsed.action === "skip") {
       results.push("Skipped all claims.");
@@ -67,7 +76,7 @@ export async function POST() {
     }
 
     if (parsed.claimIds.length === 0) {
-      results.push(`No valid claim indices found in: "${command}"`);
+      results.push(`No valid claim indices found in: "${cmd.command}"`);
       continue;
     }
 

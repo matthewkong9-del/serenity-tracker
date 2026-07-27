@@ -203,8 +203,7 @@ export async function POST(req: NextRequest) {
   let skippedTweets = 0;
   let totalClaims = 0;
   const newStocks: string[] = [];
-  const newTweetIds: number[] = []; // track new tweet IDs for Telegram notification
-  let lastNewTweetContent = "";
+  const telegramConfigured = !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
   const errors: { index: number; error: string }[] = [];
   // Stocks that received NEW claims from NEW tweets this sync — only these need
   // their relationship map re-extracted.
@@ -231,8 +230,6 @@ export async function POST(req: NextRequest) {
     });
 
     newTweets++;
-    newTweetIds.push(tweet.id);
-    lastNewTweetContent = row.content;
 
     // Log ingest
     await logPipelineRun({
@@ -407,48 +404,45 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+      // ── Per-tweet Telegram notification ──
+      if (telegramConfigured && tweetClaims > 0) {
+        const tweetClaimRows = await prisma.claim.findMany({
+          where: { tweetId: tweet.id },
+          orderBy: { id: "asc" },
+          select: { id: true, text: true, stock: { select: { ticker: true } }, impactScore: true, insightType: true },
+        });
+
+        const notificationClaims = tweetClaimRows.map((c) => ({
+          claimId: c.id,
+          ticker: c.stock.ticker,
+          text: c.text,
+          impactScore: c.impactScore,
+          insightType: c.insightType,
+        }));
+
+        // Send notification first so we can capture the message_id
+        const messageId = await notifyNewTweet(row.content, notificationClaims);
+
+        // Store the mapping + message_id so the orchestrator can match
+        // the user's reply to the correct triage entry
+        await logPipelineRun({
+          stage: "triage",
+          status: "started",
+          tweetId: tweet.id,
+          output: {
+            telegramMessageId: messageId,
+            pendingClaims: notificationClaims.map((c, i) => ({
+              index: i + 1,
+              claimId: c.claimId,
+              ticker: c.ticker,
+            })),
+          },
+          decision: `Awaiting user orders for ${notificationClaims.length} new claims from tweet.`,
+        });
+      }
     } catch (e: any) {
       errors.push({ index: i + 1, error: e.message });
     }
-  }
-
-  // ── Notify user via Telegram if configured ──
-  const telegramConfigured = !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
-
-  if (telegramConfigured && totalClaims > 0 && newTweetIds.length > 0) {
-    // Collect the newly extracted claims for the notification
-    const newClaimRows = await prisma.claim.findMany({
-      where: { tweetId: { in: newTweetIds } },
-      orderBy: { id: "asc" },
-      select: { id: true, text: true, stock: { select: { ticker: true } }, impactScore: true, insightType: true },
-    });
-
-    const notificationClaims = newClaimRows.map((c) => ({
-      claimId: c.id,
-      ticker: c.stock.ticker,
-      text: c.text,
-      impactScore: c.impactScore,
-      insightType: c.insightType,
-    }));
-
-    // Store the mapping so we can later parse user orders like "research 1 2"
-    await logPipelineRun({
-      stage: "triage",
-      status: "started",
-      output: {
-        pendingClaims: notificationClaims.map((c, i) => ({
-          index: i + 1,
-          claimId: c.claimId,
-          ticker: c.ticker,
-        })),
-      },
-      decision: `Awaiting user orders for ${notificationClaims.length} new claims.`,
-    });
-
-    // Send the notification (fire-and-forget)
-    void notifyNewTweet(lastNewTweetContent, notificationClaims).catch((e) =>
-      console.error("[sync] telegram notify failed:", e)
-    );
   }
 
   // Re-extract relationships ONLY for stocks that received new claims this sync

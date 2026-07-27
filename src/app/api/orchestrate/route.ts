@@ -53,22 +53,43 @@ export async function POST(req: NextRequest) {
     const commands = await checkForOrders();
 
     if (commands.length > 0) {
-      // Find the most recent pending triage batch
-      const pendingRun = await prisma.pipelineRun.findFirst({
-        where: { stage: "triage", status: "started" },
-        orderBy: { startedAt: "desc" },
-        select: { id: true, output: true },
-      });
+      for (const cmd of commands) {
+        // Find the triage entry this command is replying to, or fall back to
+        // the latest pending triage if it's a standalone message (no reply).
+        let pendingRun = null;
+        if (cmd.replyToMessageId) {
+          // Match by Telegram message_id — user replied to a specific notification
+          const allPending = await prisma.pipelineRun.findMany({
+            where: { stage: "triage", status: "started" },
+            orderBy: { startedAt: "desc" },
+            select: { id: true, output: true },
+          });
+          pendingRun = allPending.find((r) => {
+            try {
+              const out = JSON.parse(r.output || "{}");
+              return out.telegramMessageId === cmd.replyToMessageId;
+            } catch {
+              return false;
+            }
+          }) || null;
+        }
+        if (!pendingRun) {
+          // Fallback: standalone command → use latest pending triage
+          pendingRun = await prisma.pipelineRun.findFirst({
+            where: { stage: "triage", status: "started" },
+            orderBy: { startedAt: "desc" },
+            select: { id: true, output: true },
+          });
+        }
 
-      let pendingClaims: { index: number; claimId: number }[] = [];
-      if (pendingRun?.output) {
-        try {
-          pendingClaims = JSON.parse(pendingRun.output).pendingClaims || [];
-        } catch { /* ignore */ }
-      }
+        let pendingClaims: { index: number; claimId: number }[] = [];
+        if (pendingRun?.output) {
+          try {
+            pendingClaims = JSON.parse(pendingRun.output).pendingClaims || [];
+          } catch { /* ignore */ }
+        }
 
-      for (const command of commands) {
-        const parsed = parseResearchCommand(command, pendingClaims);
+        const parsed = parseResearchCommand(cmd.command, pendingClaims);
 
         if (parsed.action === "skip") {
           actions.push("Telegram: user skipped");
@@ -78,11 +99,16 @@ export async function POST(req: NextRequest) {
               data: { status: "skipped", completedAt: new Date() },
             });
           }
+          void sendMessage(`👍 Skipped.`).catch(() => {});
           workDone = true;
           continue;
         }
 
         if (parsed.claimIds.length > 0) {
+          // Acknowledge immediately so the user knows the command was received
+          const depthLabel = parsed.depth === "deep" ? "deep" : "quick";
+          void sendMessage(`👀 On it — researching ${parsed.claimIds.length} claim(s) (${depthLabel})…`).catch(() => {});
+
           let researched = 0;
           for (const claimId of parsed.claimIds) {
             const claim = await prisma.claim.findUnique({
@@ -98,7 +124,6 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          const depthLabel = parsed.depth === "deep" ? "adversarial" : "quick";
           actions.push(`Telegram: researched ${researched} claims (${depthLabel})`);
 
           if (pendingRun) {
@@ -108,7 +133,7 @@ export async function POST(req: NextRequest) {
             });
           }
 
-          void sendMessage(`✅ Researched ${researched} claims (${depthLabel}).`).catch(() => {});
+          void sendMessage(`✅ Done — researched ${researched} claim(s) (${depthLabel}).`).catch(() => {});
           workDone = true;
         }
       }

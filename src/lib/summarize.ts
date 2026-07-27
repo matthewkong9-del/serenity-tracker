@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { chat } from "@/lib/deepseek";
-import { logPipelineRun } from "@/lib/pipeline-log";
+import { logPipelineRun, completePipelineRun } from "@/lib/pipeline-log";
 
 const SYSTEM_PROMPT = (
   ticker: string
@@ -196,7 +196,7 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
   if (!context.trim())
     throw new Error("No content to summarize. Add tweets, files, or notes first.");
 
-  await logPipelineRun({
+  const runId = await logPipelineRun({
     stage: "summarize",
     status: "started",
     stockTicker: ticker,
@@ -229,28 +229,26 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
       },
     });
 
-    await logPipelineRun({
-      stage: "summarize",
-      status: "completed",
-      stockTicker: ticker,
-      stockId: stock.id,
-      output: {
-        summaryLength: summaryText.length,
-        chokepointDepth,
-      },
-      decision: `Summary generated. Chokepoint depth: ${chokepointDepth ?? "not rated"}/5.`,
-    });
+    if (runId) {
+      await completePipelineRun(runId, {
+        status: "completed",
+        output: {
+          summaryLength: summaryText.length,
+          chokepointDepth,
+        },
+        decision: `Summary generated. Chokepoint depth: ${chokepointDepth ?? "not rated"}/5.`,
+      });
+    }
 
     return summaryText;
   } catch (e: any) {
-    await logPipelineRun({
-      stage: "summarize",
-      status: "failed",
-      stockTicker: ticker,
-      stockId: stock.id,
-      error: e.message?.slice(0, 500) || "Unknown error",
-      decision: "Summary generation failed.",
-    });
+    if (runId) {
+      await completePipelineRun(runId, {
+        status: "failed",
+        error: e.message?.slice(0, 500) || "Unknown error",
+        decision: "Summary generation failed.",
+      });
+    }
     throw e;
   }
 }

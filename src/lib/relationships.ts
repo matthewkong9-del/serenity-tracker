@@ -2,11 +2,19 @@ import { prisma } from "@/lib/db";
 import { chatJson } from "@/lib/deepseek";
 import { logPipelineRun } from "@/lib/pipeline-log";
 
+/** Normalize sources field — DeepSeek sometimes returns an array despite the schema saying string. */
+function safeSources(v: unknown): string | null {
+  if (!v) return null;
+  if (typeof v === "string") return v.trim().slice(0, 500) || null;
+  if (Array.isArray(v)) return v.map((s) => String(s).trim()).filter(Boolean).join("; ").slice(0, 500) || null;
+  return String(v).trim().slice(0, 500) || null;
+}
+
 interface RelationshipExtract {
   type: string;
   target: string;
   description?: string;
-  sources?: string;
+  sources?: string | string[];
   sourceConfidence: "confirmed" | "speculative" | "gap";
 }
 
@@ -247,7 +255,7 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
         type: (r.type || "other").toLowerCase().trim().slice(0, 50),
         target: (r.target || "Unknown").trim().slice(0, 200),
         description: r.description?.trim()?.slice(0, 500) || null,
-        sources: r.sources?.trim()?.slice(0, 500) || null,
+        sources: safeSources(r.sources),
         sourceConfidence: ["confirmed", "speculative", "gap"].includes(r.sourceConfidence)
           ? r.sourceConfidence
           : "speculative",
@@ -302,7 +310,7 @@ export async function extractContrarianAngles(ticker: string, apiKey: string): P
       type: (a.type || "other").toLowerCase().trim().slice(0, 50),
       target: (a.target || "Unknown").trim().slice(0, 200),
       description: a.description?.trim()?.slice(0, 500) || null,
-      sources: a.sources?.trim()?.slice(0, 500) || null,
+      sources: safeSources(a.sources),
       sourceConfidence: ["confirmed", "speculative", "gap"].includes(a.sourceConfidence)
         ? a.sourceConfidence
         : "speculative",

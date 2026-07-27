@@ -1,13 +1,14 @@
 import { prisma } from "@/lib/db";
 import { fetchStockMetrics as finnhubFetch } from "@/lib/finnhub";
 import { fetchStockMetrics as yahooFetch } from "@/lib/yahoo";
+import { fetchStockMetrics as avFetch } from "@/lib/alphavantage";
 import { NextResponse } from "next/server";
 
 /** POST /api/prices/refresh — called by daily cron.
- *  Phase 1: Finnhub for all stocks (price + P/B where available).
+ *  Phase 1: Finnhub for all stocks (price + P/B + market cap where available).
  *  Phase 2: Yahoo Finance for stocks Finnhub didn't price.
- *  P/B is tracked independently — Finnhub metrics may return P/B even
- *  when the quote endpoint returns no price (common for international stocks). */
+ *  Phase 3: Alpha Vantage for international stocks still missing market cap
+ *           (free tier: 25 calls/day, throttled to 5/min). */
 export async function POST() {
   const finnhubKey = process.env.FINNHUB_API_KEY;
   if (!finnhubKey) {
@@ -19,6 +20,7 @@ export async function POST() {
 
   const stocks = await prisma.stock.findMany({
     select: { id: true, ticker: true, sector: true },
+    orderBy: { id: "asc" },
   });
 
   // Track price, P/B, and market cap independently
@@ -69,6 +71,66 @@ export async function POST() {
     }
   }
 
+  // ── Phase 3: Alpha Vantage for international stocks missing market cap ──
+  // Free tier: 25 calls/day, 5 calls/min. Target only stocks with claims
+  // (most important) that are still missing market cap after Finnhub.
+  const avKey = process.env.ALPHA_VANTAGE_API_KEY;
+  const AV_DAILY_LIMIT = 25;
+  let avCalls = 0;
+  let avFilled = 0;
+
+  if (avKey) {
+    const missingMcap = stocks.filter(
+      (s) => !mcapMap.has(s.id) && !priceMap.has(s.id) === false // has price but no mcap
+    );
+    // Re-filter: has price, missing mcap
+    const targets = stocks.filter((s) => !mcapMap.has(s.id));
+
+    // Prioritize stocks with claims (more data → more important to score)
+    const claimCounts = new Map<number, number>();
+    const claims = await prisma.claim.groupBy({
+      by: ["stockId"],
+      _count: { id: true },
+    });
+    for (const c of claims) claimCounts.set(c.stockId, c._count.id);
+
+    targets.sort((a, b) => {
+      const ca = claimCounts.get(a.id) ?? 0;
+      const cb = claimCounts.get(b.id) ?? 0;
+      return cb - ca; // most claims first
+    });
+
+    console.log(
+      `[prices] Phase 3 (Alpha Vantage): ${targets.length} stocks missing mcap, ` +
+        `limit ${AV_DAILY_LIMIT}/day`
+    );
+
+    for (const s of targets) {
+      if (avCalls >= AV_DAILY_LIMIT) break;
+
+      // Throttle: 5 calls/min = 1 per 12s
+      if (avCalls > 0) await new Promise((r) => setTimeout(r, 13_000));
+
+      try {
+        avCalls++;
+        const m = await avFetch(s.ticker, s.sector);
+        if (m.marketCap !== null) {
+          mcapMap.set(s.id, m.marketCap);
+          avFilled++;
+        }
+        if (m.pbRatio !== null && !pbMap.has(s.id)) {
+          pbMap.set(s.id, m.pbRatio);
+        }
+      } catch (e: any) {
+        console.warn(`[prices] alphavantage failed for ${s.ticker}: ${e.message}`);
+      }
+    }
+
+    console.log(
+      `[prices] Phase 3 done: ${avFilled}/${avCalls} calls filled mcap`
+    );
+  }
+
   // ── Persist ──
   let fromFinnhub = 0;
   let fromYahoo = 0;
@@ -101,8 +163,11 @@ export async function POST() {
   return NextResponse.json({
     priced: priceMap.size,
     withPb: pbMap.size,
+    withMcap: mcapMap.size,
     total: stocks.length,
     fromFinnhub,
     fromYahoo,
+    fromAlphaVantage: avFilled,
+    avCalls,
   });
 }

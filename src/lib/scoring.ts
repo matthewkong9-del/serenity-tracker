@@ -92,13 +92,14 @@ export function assignBucket(input: ScoringInput): OpportunityBucket {
   // 1. Chokepoint depth (1-5, default 2 if unknown)
   const chokepoint = input.chokepointDepth ?? 2;
 
-  // 2. Evidence quality (0.3 – 1.0)
-  //    Few claims + all unverified = floor of 0.3 (not zero — claims exist, just unverified)
+  // 2. Evidence quality (0.5 – 1.0)
+  //    Claims exist = at least floor of 0.5 (claims are evidence, even unverified).
+  //    No claims at all = floor of 0.3 (nothing to work with).
   const resolved = input.supportedClaims + input.refutedClaims;
   const evidenceQuality =
     input.totalClaims === 0
       ? 0.3
-      : Math.max(0.3, resolved > 0 ? input.supportedClaims / resolved : 0.3);
+      : Math.max(0.5, resolved > 0 ? input.supportedClaims / resolved : 0.5);
 
   // 3. Market ignorance (1-5)
   const ignorance = marketIgnoranceScore(input.marketCap);
@@ -113,7 +114,7 @@ export function assignBucket(input: ScoringInput): OpportunityBucket {
   const score = chokepoint * evidenceQuality * ignorance * asymmetricBonus * valuation;
 
   // ── Bucketing ──
-  if (score >= 8 && stance === "Bullish") {
+  if (score >= 6 && stance === "Bullish") {
     return "strong_buy";
   }
   if (score >= 3 && stance !== "Bearish") {

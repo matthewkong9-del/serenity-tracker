@@ -38,13 +38,14 @@ export interface ClaimNotification {
 
 // ── Sending ──
 
-/** Send a plain text message to the configured chat. */
-export async function sendMessage(text: string): Promise<boolean> {
+/** Send a plain text message to the configured chat.
+ *  Returns the Telegram message_id, or null on failure. */
+export async function sendMessage(text: string): Promise<number | null> {
   const t = token();
   const c = chatId();
   if (!t || !c) {
     console.log("[telegram] not configured — skipping send");
-    return false;
+    return null;
   }
 
   try {
@@ -62,13 +63,14 @@ export async function sendMessage(text: string): Promise<boolean> {
     if (!res.ok) {
       const err = await res.text();
       console.error(`[telegram] send failed: ${err}`);
-      return false;
+      return null;
     }
 
-    return true;
+    const data = await res.json();
+    return data.result?.message_id ?? null;
   } catch (e: any) {
     console.error(`[telegram] send error: ${e.message}`);
-    return false;
+    return null;
   }
 }
 
@@ -79,10 +81,10 @@ export async function sendMessage(text: string): Promise<boolean> {
 export async function notifyNewTweet(
   tweetContent: string,
   claims: ClaimNotification[]
-): Promise<boolean> {
+): Promise<number | null> {
   const t = token();
   const c = chatId();
-  if (!t || !c) return false;
+  if (!t || !c) return null;
 
   // Truncate tweet for the preview
   const preview =
@@ -118,25 +120,25 @@ export async function notifyNewTweet(
     .join("\n");
 
   const text = [
-    `🆕 *New tweet from Serenity*`,
+    `🆕 *Serenity just tweeted*`,
     ``,
     `> ${preview}`,
     ``,
-    `${claims.length} claim(s) extracted:`,
+    `${claims.length} claim(s) found:`,
     claimLines,
     ``,
-    `Reply with orders:`,
-    `\`research 1 2 3\` — research specific claims`,
-    `\`research all\` — research everything`,
-    `\`skip\` — skip all`,
-    `\`deep 1\` — deep (adversarial) research on claim 1`,
+    `What should I do?`,
+    `\`research 1 2\` — check specific claims`,
+    `\`research all\` — check everything`,
+    `\`deep 1\` — dig deeper on claim 1`,
+    `\`skip\` — ignore this one`,
   ].join("\n");
 
   return sendMessage(text);
 }
 
 /** Send a simple status message (pipeline complete, error, etc). */
-export async function notify(message: string): Promise<boolean> {
+export async function notify(message: string): Promise<number | null> {
   return sendMessage(`🤖 *Pipeline update*\n\n${message}`);
 }
 
@@ -144,8 +146,15 @@ export async function notify(message: string): Promise<boolean> {
 
 let lastUpdateId = 0;
 
-/** Poll Telegram for new messages from the user. Returns parsed commands. */
-export async function checkForOrders(): Promise<string[]> {
+export interface TelegramCommand {
+  command: string;
+  /** The message_id of the notification this command was a reply to, if any. */
+  replyToMessageId: number | null;
+}
+
+/** Poll Telegram for new messages from the user. Returns parsed commands with
+ *  reply-to info so the orchestrator can match commands to the right triage. */
+export async function checkForOrders(): Promise<TelegramCommand[]> {
   const t = token();
   if (!t) return [];
 
@@ -163,7 +172,7 @@ export async function checkForOrders(): Promise<string[]> {
     const data = await res.json();
     if (!data.ok || !data.result) return [];
 
-    const commands: string[] = [];
+    const commands: TelegramCommand[] = [];
 
     for (const update of data.result) {
       lastUpdateId = Math.max(lastUpdateId, update.update_id);
@@ -178,7 +187,10 @@ export async function checkForOrders(): Promise<string[]> {
         continue;
       }
 
-      commands.push(msg.text.trim().toLowerCase());
+      commands.push({
+        command: msg.text.trim().toLowerCase(),
+        replyToMessageId: msg.reply_to_message?.message_id ?? null,
+      });
     }
 
     return commands;

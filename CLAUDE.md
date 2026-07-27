@@ -2,6 +2,8 @@
 
 A Next.js 14 stock tracking and AI-powered research analysis app. Tracks stocks mentioned by the investor "Serenity" (@aleaboreddit), extracts claims from his tweets, and uses DeepSeek's LLM to cross-reference claims against uploaded documents.
 
+**Before starting work, read the build log:** `.claude/projects/-root-serenity-tracker/memory/build-log.md` — complete record of every feature, bug fix, and architecture decision from June 2026 to present. Also check `MEMORY.md` in the same directory for session-specific context.
+
 ## Tech Stack
 
 - **Framework:** Next.js 14 (App Router), React 18, TypeScript
