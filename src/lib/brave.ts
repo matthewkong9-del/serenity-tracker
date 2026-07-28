@@ -33,6 +33,7 @@ export async function braveSearch(query: string, count = 5): Promise<BraveSearch
       "Accept-Encoding": "gzip",
       "X-Subscription-Token": apiKey,
     },
+    signal: AbortSignal.timeout(30_000), // 30s — prevents hanging
   });
 
   if (!res.ok) {

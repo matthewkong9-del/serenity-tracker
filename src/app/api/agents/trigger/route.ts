@@ -155,7 +155,13 @@ export async function POST(req: NextRequest) {
 
         const [failed24h, stuck24h, costSpike] = await Promise.all([
           prisma.pipelineRun.count({
-            where: { status: "failed", startedAt: { gte: twentyFourHoursAgo } },
+            where: {
+              status: "failed",
+              startedAt: { gte: twentyFourHoursAgo },
+              // Exclude runs already handled by Ops — those were stuck runs
+              // that ops auto-cleared; watchdog shouldn't re-flag them.
+              NOT: { error: { startsWith: "Auto-cleared by Ops" } },
+            },
           }),
           prisma.pipelineRun.count({
             where: {

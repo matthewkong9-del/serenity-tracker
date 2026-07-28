@@ -43,6 +43,7 @@ async function exaSearch(query: string, apiKey: string): Promise<Source[]> {
       numResults: 5,
       contents: { text: { maxCharacters: MAX_SOURCE_LEN }, highlights: { numSentences: 3 } },
     }),
+    signal: AbortSignal.timeout(60_000), // 1 min — prevents stuck PipelineRuns when Exa hangs
   });
 
   if (!res.ok) {

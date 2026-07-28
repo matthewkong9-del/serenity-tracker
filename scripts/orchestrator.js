@@ -13,6 +13,8 @@
  *   pm2 save
  */
 
+require("dotenv").config({ path: require("path").resolve(__dirname, "../.env"), quiet: true });
+
 const BASE_URL = process.env.ORCHESTRATOR_URL || "http://localhost:3000";
 const TICK_INTERVAL_MS = parseInt(process.env.ORCHESTRATOR_INTERVAL || "30000", 10); // 30s
 const TOKEN = process.env.ORCHESTRATOR_TOKEN || "";
@@ -31,13 +33,26 @@ const lastRun = {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+/** Fetch with an AbortController timeout so a hung request doesn't block
+ *  the orchestrator tick loop forever. */
+async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Call the main orchestrate endpoint directly (uses token auth). */
 async function orchestrateTick() {
   try {
-    const res = await fetch(`${BASE_URL}/api/orchestrate`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/orchestrate`, {
       method: "POST",
       headers: { "x-orchestrator-token": TOKEN },
-    });
+    }, 25000);
     const data = await res.json().catch(() => ({}));
     return { ok: res.ok, ...data };
   } catch (e) {
@@ -49,11 +64,11 @@ async function orchestrateTick() {
 /** Trigger a named agent via the agents trigger endpoint. */
 async function triggerAgent(agentName, label) {
   try {
-    const res = await fetch(`${BASE_URL}/api/agents/trigger`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/agents/trigger`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ agent: agentName }),
-    });
+    }, 55000);
     const data = await res.json().catch(() => ({}));
     return { ok: res.ok, ...data };
   } catch (e) {
