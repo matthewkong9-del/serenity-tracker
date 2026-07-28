@@ -103,6 +103,10 @@ const AGENTS: AgentDef[] = [
   },
 ];
 
+/** Filter that excludes runs already handled by Ops — those were stuck runs
+ *  that ops auto-cleared; they should not be re-flagged as errors. */
+const NOT_AUTO_CLEARED = { NOT: { error: { startsWith: "Auto-cleared by Ops" } } };
+
 // ── Helper: get recent pipeline stats for a set of stages ─────────────
 
 async function getAgentStats(stages: string[]) {
@@ -138,6 +142,7 @@ async function getAgentStats(stages: string[]) {
         stage: { in: stages },
         status: "failed",
         startedAt: { gte: twentyFourHoursAgo },
+        ...NOT_AUTO_CLEARED,
       },
     }),
     prisma.pipelineRun.count({
@@ -191,10 +196,10 @@ async function getAgentStats(stages: string[]) {
     metric = { label: "Tweets synced", value: String(tweetCount) };
   }
 
-  // Watchdog: errors in last 24h
+  // Watchdog: errors in last 24h (excluding auto-cleared)
   if (stages.includes("watchdog")) {
     const errors24h = await prisma.pipelineRun.count({
-      where: { status: "failed", startedAt: { gte: twentyFourHoursAgo } },
+      where: { status: "failed", startedAt: { gte: twentyFourHoursAgo }, ...NOT_AUTO_CLEARED },
     });
     metric = { label: "Errors (24h)", value: String(errors24h) };
   }
@@ -267,7 +272,7 @@ export async function GET() {
 
   const [errors24h, costs24h, pendingClaims, lastOrchTick] = await Promise.all([
     prisma.pipelineRun.count({
-      where: { status: "failed", startedAt: { gte: twentyFourHoursAgo } },
+      where: { status: "failed", startedAt: { gte: twentyFourHoursAgo }, ...NOT_AUTO_CLEARED },
     }),
     prisma.apiCallLog.aggregate({
       where: { createdAt: { gte: twentyFourHoursAgo } },
@@ -312,11 +317,12 @@ export async function GET() {
     },
   });
 
-  // Watchdog alerts: failed runs in last 24h
+  // Watchdog alerts: failed runs in last 24h (excluding auto-cleared)
   const watchdogAlerts = await prisma.pipelineRun.findMany({
     where: {
       status: "failed",
       startedAt: { gte: twentyFourHoursAgo },
+      ...NOT_AUTO_CLEARED,
     },
     orderBy: { startedAt: "desc" },
     take: 10,
