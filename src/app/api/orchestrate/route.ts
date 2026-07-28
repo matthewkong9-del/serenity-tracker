@@ -91,6 +91,23 @@ export async function POST(req: NextRequest) {
 
         const parsed = parseResearchCommand(cmd.command, pendingClaims);
 
+        // Fallback: if no triage entry matched (user replied to old notification,
+        // or sent a standalone command), research ALL pending claims
+        if (parsed.action === "research" && parsed.claimIds.length === 0) {
+          const allPending = await prisma.claim.findMany({
+            where: {
+              status: "unverified",
+              researchStatus: { in: ["pending", "failed"] },
+            },
+            select: { id: true },
+            orderBy: { createdAt: "asc" },
+          });
+          if (allPending.length > 0) {
+            parsed.claimIds = allPending.map((c) => c.id);
+            void sendMessage(`⚠️ Couldn't match your reply to a specific notification. Researching all ${allPending.length} pending claims instead.`).catch(() => {});
+          }
+        }
+
         if (parsed.action === "skip") {
           actions.push("Telegram: user skipped");
           if (pendingRun) {
@@ -212,6 +229,13 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Report ──────────────────────────────────────────────────────────────
+  // Log every tick so the agents page knows the orchestrator is alive
+  await logPipelineRun({
+    stage: "orchestrate",
+    status: "completed",
+    decision: workDone ? actions.join("; ") : "Tick — nothing to do",
+  });
+
   return NextResponse.json({
     workDone,
     summary: workDone ? actions.join("; ") : "Nothing to do",

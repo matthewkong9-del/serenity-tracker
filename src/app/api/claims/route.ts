@@ -9,10 +9,17 @@ export async function GET(req: NextRequest) {
   const sort = searchParams.get("sort") || "newest";
   const limit = parseInt(searchParams.get("limit") || "0") || 0;
 
+  const researchStatus = searchParams.get("researchStatus");
+
   const where: Record<string, any> = {};
 
   if (status && status !== "all") {
     where.status = status;
+  }
+
+  // "pending" = claims waiting for research (pending or previously failed)
+  if (researchStatus === "pending") {
+    where.researchStatus = { in: ["pending", "failed"] };
   }
 
   if (tweetId) {

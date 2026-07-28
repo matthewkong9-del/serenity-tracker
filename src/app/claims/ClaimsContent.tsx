@@ -27,12 +27,13 @@ const CLAIM_COLORS: Record<string, string> = {
 };
 
 function getSearchParams() {
-  if (typeof window === "undefined") return { status: "", search: "", tweetId: "" };
+  if (typeof window === "undefined") return { status: "", search: "", tweetId: "", researchStatus: "" };
   const sp = new URLSearchParams(window.location.search);
   return {
     status: sp.get("status") || "",
     search: sp.get("search") || "",
     tweetId: sp.get("tweetId") || "",
+    researchStatus: sp.get("researchStatus") || "",
   };
 }
 
@@ -48,6 +49,7 @@ export default function ClaimsContent() {
     disputed: 0,
   });
   const [status, setStatus] = useState(initialParams.status || "all");
+  const [researchStatus] = useState(initialParams.researchStatus);
   const [search, setSearch] = useState(initialParams.search);
   const [tweetId] = useState(initialParams.tweetId);
   const [sort, setSort] = useState("newest");
@@ -64,6 +66,7 @@ export default function ClaimsContent() {
     setError("");
     const params = new URLSearchParams();
     if (status && status !== "all") params.set("status", status);
+    if (researchStatus) params.set("researchStatus", researchStatus);
     if (search) params.set("search", search);
     if (tweetId) params.set("tweetId", tweetId);
     params.set("sort", sort);
@@ -82,7 +85,7 @@ export default function ClaimsContent() {
         setError(e.message);
         setLoading(false);
       });
-  }, [status, search, tweetId, sort]);
+  }, [status, researchStatus, search, tweetId, sort]);
 
   useEffect(() => {
     load();
@@ -203,6 +206,21 @@ export default function ClaimsContent() {
           className="bg-surface border border-border rounded-lg px-4 py-2 text-sm text-fg w-64 placeholder:text-muted"
         />
       </div>
+
+      {/* "Needs research" filter banner */}
+      {researchStatus === "pending" && (
+        <div className="bg-amber-400/10 border border-amber-400/30 rounded-lg px-4 py-2 mb-6 flex items-center justify-between text-sm">
+          <span className="text-amber-400">
+            ⏳ Showing claims that need research (pending or previously failed)
+          </span>
+          <button
+            onClick={() => router.push("/claims")}
+            className="text-accent text-xs hover:underline"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
 
       {/* TweetId filter banner */}
       {tweetId && (
