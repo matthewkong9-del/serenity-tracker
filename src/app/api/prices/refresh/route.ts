@@ -4,6 +4,28 @@ import { fetchStockMetrics as yahooFetch } from "@/lib/yahoo";
 import { fetchStockMetrics as avFetch } from "@/lib/alphavantage";
 import { NextResponse } from "next/server";
 
+/** Approximate FX rates to USD (updated periodically).
+ *  For precise conversion, an FX API would be needed. */
+const FX_TO_USD: Record<string, number> = {
+  USD: 1.0,
+  KRW: 0.00072,
+  JPY: 0.0065,
+  TWD: 0.032,
+  CNY: 0.14,
+  HKD: 0.128,
+  EUR: 1.10,
+  GBP: 1.27,
+  CAD: 0.74,
+  AUD: 0.67,
+  SGD: 0.75,
+  CHF: 1.13,
+  SEK: 0.096,
+  NOK: 0.094,
+  DKK: 0.147,
+  BRL: 0.20,
+  INR: 0.012,
+};
+
 /** POST /api/prices/refresh — called by daily cron.
  *  Phase 1: Finnhub for all stocks (price + P/B + market cap where available).
  *  Phase 2: Yahoo Finance for stocks Finnhub didn't price.
@@ -23,8 +45,8 @@ export async function POST() {
     orderBy: { id: "asc" },
   });
 
-  // Track price, P/B, and market cap independently
-  const priceMap = new Map<number, { price: number; source: string }>();
+  // Track price, currency, P/B, and market cap independently
+  const priceMap = new Map<number, { price: number; currency: string; source: string }>();
   const pbMap = new Map<number, number>();
   const mcapMap = new Map<number, number>();
 
@@ -36,7 +58,7 @@ export async function POST() {
     try {
       const m = await finnhubFetch(s.ticker, s.sector);
       if (m.price !== null) {
-        priceMap.set(s.id, { price: m.price, source: "finnhub" });
+        priceMap.set(s.id, { price: m.price, currency: m.currency || "USD", source: "finnhub" });
       }
       // Capture P/B even when price failed — metrics endpoint is independent
       if (m.pbRatio !== null) {
@@ -62,7 +84,7 @@ export async function POST() {
       try {
         const m = await yahooFetch(s.ticker, s.sector);
         if (m.price !== null) {
-          priceMap.set(s.id, { price: m.price, source: "yahoo" });
+          priceMap.set(s.id, { price: m.price, currency: m.currency || "USD", source: "yahoo" });
         }
       } catch (e: any) {
         console.warn(`[prices] yahoo failed for ${s.ticker}: ${e.message}`);
@@ -140,10 +162,16 @@ export async function POST() {
     const pb = pbMap.get(s.id) ?? null;
 
     if (pd || pb !== null) {
+      const currency = pd?.currency || "USD";
+      const rate = FX_TO_USD[currency] || 1.0;
+      const priceUsd = pd?.price != null ? pd.price * rate : undefined;
+
       await prisma.stock.update({
         where: { id: s.id },
         data: {
           currentPrice: pd?.price ?? undefined,
+          currency: currency,
+          priceUsd: priceUsd,
           pbRatio: pb,
           marketCap: mcapMap.get(s.id) ?? undefined,
           lastPriceUpdated: new Date(),

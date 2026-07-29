@@ -51,6 +51,7 @@ export function finnhubSymbol(ticker: string, sector?: string | null): string {
 
 export interface StockMetrics {
   price: number | null;
+  currency: string | null; // "USD", "EUR", etc. — detected from ticker exchange
   pbRatio: number | null;
   peRatio: number | null;
   marketCap: number | null;
@@ -104,6 +105,21 @@ export async function fetchMetrics(symbol: string): Promise<FinnhubMetrics["metr
   return data.metric || null;
 }
 
+/** Detect currency from exchange suffix. */
+function detectCurrency(symbol: string): string {
+  const s = symbol.toUpperCase();
+  if (/\.(KS|KQ)$/i.test(s)) return "KRW";
+  if (/\.(TW|TWO)$/i.test(s)) return "TWD";
+  if (/\.T$/i.test(s)) return "JPY";
+  if (/\.HK$/i.test(s)) return "HKD";
+  if (/\.(SZ|SS)$/i.test(s)) return "CNY";
+  if (/\.(DE|F|PA|MC|MI|SW|AS|BR|VI)$/i.test(s)) return "EUR";
+  if (/\.(L|CS|OL|ST)$/i.test(s)) return "GBP";
+  if (/\.(TO|V|CN|AT|NE)$/i.test(s)) return "CAD";
+  if (/\.(AX|SI|NZ)$/i.test(s)) return "AUD";
+  return "USD";
+}
+
 /** Combined convenience: fetch price AND P/B for a ticker in one call pair. */
 export async function fetchStockMetrics(
   ticker: string,
@@ -118,6 +134,7 @@ export async function fetchStockMetrics(
 
   return {
     price: quote?.c ?? null,
+    currency: detectCurrency(symbol),
     pbRatio: metric?.pbAnnual ?? metric?.pbQuarterly ?? null,
     peRatio: metric?.peAnnual ?? null,
     marketCap: metric?.marketCapitalization ?? null,

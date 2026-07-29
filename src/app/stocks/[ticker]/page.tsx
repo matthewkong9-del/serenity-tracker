@@ -23,6 +23,7 @@ interface StockData {
   narrative: string | null;
   lastSummaryAt: string | null;
   currentPrice: number | null;
+  currency: string | null;
   pbRatio: number | null;
   marketCap: number | null;
   chokepointDepth: number | null;
@@ -149,7 +150,9 @@ export default function StockKBPage() {
               )}
               {stock.currentPrice && (
                 <span className="text-xs text-fg/80 font-medium">
-                  ${stock.currentPrice.toFixed(2)}
+                  {stock.currency && stock.currency !== "USD"
+                    ? `${stock.currentPrice.toFixed(2)} ${stock.currency}`
+                    : `$${stock.currentPrice.toFixed(2)}`}
                 </span>
               )}
               {stock.pbRatio && (
@@ -205,6 +208,7 @@ export default function StockKBPage() {
             pbRatio={stock.pbRatio}
             marketCap={stock.marketCap}
             currentPrice={stock.currentPrice}
+            currency={stock.currency}
             claimCounts={stock.claimCounts}
             summary={stock.summary}
           />

@@ -19,8 +19,10 @@ model Stock {
   chokepointDepth Int?     // 1-5: how essential is what this company controls? Set by AI summary.
   narrative     String?    // conversational knowledge base story — generated after summarization
   currentPrice    Float?
+  currency        String?  // "USD", "KRW", "EUR", "CNY", "CAD", "TWD", "JPY", "HKD" etc. null = USD
+  priceUsd        Float?   // USD-normalized price for cross-stock comparison (computed during refresh)
   pbRatio         Float?
-  marketCap       Float?    // market capitalization (from Finnhub)
+  marketCap       Float?    // market capitalization (from Finnhub, in millions USD)
   lastPriceUpdated DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

@@ -13,6 +13,7 @@ interface Props {
   pbRatio: number | null;
   marketCap: number | null;
   currentPrice: number | null;
+  currency: string | null;
   claimCounts: ClaimCounts;
   summary: string | null;
 }
@@ -21,13 +22,21 @@ interface Props {
  * Evidence cards — the structured data grid below the narrative.
  * Each card answers one investment question at a glance.
  */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$", KRW: "₩", JPY: "¥", TWD: "NT$", CNY: "¥", HKD: "HK$",
+  EUR: "€", GBP: "£", CAD: "C$", AUD: "A$",
+};
+
 export default function EvidenceCards({
   chokepointDepth,
   pbRatio,
   marketCap,
   currentPrice,
+  currency,
   claimCounts,
 }: Props) {
+  const csym = CURRENCY_SYMBOLS[currency || "USD"] || "$";
+  const clabel = currency && currency !== "USD" ? ` ${currency}` : "";
   const resolved = claimCounts.supported + claimCounts.refuted;
   const verifiedRate = claimCounts.total > 0
     ? Math.round((resolved / claimCounts.total) * 100)
@@ -80,7 +89,7 @@ export default function EvidenceCards({
         value={pbRatio ? `${pbRatio.toFixed(1)}x P/B` : "—"}
         detail={
           currentPrice
-            ? `$${currentPrice.toFixed(2)} • ${formatMcap(marketCap)}`
+            ? `${csym}${currentPrice.toFixed(2)}${clabel} • ${formatMcap(marketCap)}`
             : formatMcap(marketCap)
         }
         color={
