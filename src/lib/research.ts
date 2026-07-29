@@ -241,10 +241,13 @@ export async function researchClaim(
 ): Promise<void> {
   const claim = await prisma.claim.findUnique({
     where: { id: claimId },
-    select: { text: true, status: true, stockId: true },
+    select: { text: true, status: true, researchStatus: true, stockId: true },
   });
   if (!claim) return;
-  if (claim.status !== "unverified") return;
+  // Allow re-research of any claim that's explicitly been queued (pending/failed).
+  // Previously only allowed unverified claims, which blocked re-research of
+  // supported/refuted/disputed claims that were re-triggered.
+  if (claim.status !== "unverified" && claim.researchStatus === "done") return;
 
   // Mark as researching
   await prisma.claim.update({
