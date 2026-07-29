@@ -254,9 +254,13 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
       take: 100,
     });
 
+    // Filter to stocks that need summarization AND have content to summarize
     const stale = stocksToCheck.filter((s) => needsSummary(s));
-    if (stale.length > 0) {
-      const s = stale[0];
+    const actionable = stale.filter(
+      (s) => s.files.length > 0 || s.notes?.length > 0 || s.claims.length > 0
+    );
+    if (actionable.length > 0) {
+      const s = actionable[0];
       try {
         await summarizeStock(s.ticker, apiKey);
         actions.push(`Summary: $${s.ticker}`);
