@@ -28,6 +28,7 @@ model Stock {
   notes          Note[]
   claims          Claim[]
   relationships   Relationship[]
+  annotations     Annotation[]
   decision        Decision?
 }
 
@@ -173,4 +174,14 @@ model PipelineRun {
   error       String?
   startedAt   DateTime @default(now())
   completedAt DateTime?
+}
+
+model Annotation {
+  id        Int      @id @default(autoincrement())
+  stockId   Int
+  stock     Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  section   String   // which narrative section this annotates: "what" | "chokepoint" | "numbers" | "risk" | "bottom"
+  text      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

@@ -11,6 +11,39 @@ function hashContent(content: string): string {
   return createHash("sha256").update(content.trim()).digest("hex").slice(0, 16);
 }
 
+/** Fallback impact score derived from insightType + text signals.
+ *  Used when the LLM omits impactScore (common with smaller models).
+ *  Ensures the triage-by-impact routing always has a value to work with. */
+function defaultImpactScore(
+  text: string,
+  insightType?: string | null
+): number {
+  // Strong signals from insightType
+  if (insightType === "chokepoint") return 5;
+  if (
+    insightType === "dependency" ||
+    insightType === "pricing_power" ||
+    insightType === "moat_signal"
+  )
+    return 4;
+  if (insightType === "risk_factor") return 2;
+
+  // Fallback: scan text for impact signals
+  const t = text.toLowerCase();
+  const highSignal = t.match(
+    /\b(sole|only supplier|monopoly|bottleneck|cannot replace|critical|exclusive|must have|irreplaceable|single source)\b/
+  );
+  if (highSignal) return 4;
+
+  const lowSignal = t.match(
+    /\b(vague|rumor|might|maybe|possibly|unclear|speculation)\b/
+  );
+  if (lowSignal) return 2;
+
+  // Default: moderate impact — safe middle ground
+  return 3;
+}
+
 /** Quick LLM classifier: is this tweet about investing/markets, or personal/off-topic?
  *  Costs ~$0.00002 per call — tiny prompt + yes/no response. */
 async function isInvestingTweet(
@@ -303,7 +336,7 @@ export async function POST(req: NextRequest) {
             tweetId: tweet.id,
             text: c.text,
             extractionConfidence: c.confidence,
-            impactScore: c.impactScore || null,
+            impactScore: c.impactScore || defaultImpactScore(c.text, c.insightType),
             insightType: c.insightType || null,
             source: row.timestamp
               ? `Serenity tweet ${new Date(row.timestamp).toLocaleDateString()}`

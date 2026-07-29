@@ -9,6 +9,8 @@ import { BUCKET_LABELS, BUCKET_COLORS, type OpportunityBucket } from "@/lib/scor
 import StockNarrative from "./knowledge-base/StockNarrative";
 import EvidenceCards from "./knowledge-base/EvidenceCards";
 import Changelog from "./knowledge-base/Changelog";
+import AnnotationsPanel from "./knowledge-base/AnnotationsPanel";
+import PeerComparison from "./knowledge-base/PeerComparison";
 
 // ── Types ──
 
@@ -208,6 +210,12 @@ export default function StockKBPage() {
           />
         </div>
       )}
+
+      {/* ── Annotations + Peer Comparison (side-by-side on wide screens) ── */}
+      <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <AnnotationsPanel ticker={ticker} />
+        <PeerComparison ticker={ticker} />
+      </div>
 
       {/* ── Changelog ── */}
       <div className="mb-6">
