@@ -203,7 +203,6 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
   // to Telegram for human review — don't touch them here.
   // When Telegram is NOT configured: auto-research everything.
   const researchFilter: any = {
-    status: "unverified",
     researchStatus: { in: ["pending", "failed"] },
   };
 
