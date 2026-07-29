@@ -12,19 +12,29 @@
 export function yahooSymbols(ticker: string, sector?: string | null): string[] {
   const t = ticker.toUpperCase().trim();
 
+  // Known overrides — same mapping as finnhub.ts
+  const OVERRIDES: Record<string, string[]> = {
+    SAMSUNG: ["005930.KS"],
+    "SK HYNIX": ["000660.KS"],
+    LPKF: ["LPK.DE"],
+    "002463": ["002463.SZ"],
+  };
+  if (OVERRIDES[t]) return OVERRIDES[t];
+
   // Already has a known suffix — pass through (but also try .TWO for .TW)
-  if (/\.(TW|T|KS|KQ|HK|L|DE|F|PA|MC|MI|SW|AS|BR|SA|SZ|SS|JK|NS|BO|SN|CO|LS|TA|WA|VI|AX|OL|ST|BC|DU|HM|MU|SG|SI|KL|JK|MK|NZ|IL|ZH|IR|HE|RG)$/i.test(t)) {
+  if (/\.(TW|TWO|T|KS|KQ|HK|L|DE|F|PA|MC|MI|SW|AS|BR|SA|SZ|SS|JK|NS|BO|SN|CO|LS|TA|WA|VI|AX|OL|ST|BC|DU|HM|MU|SG|SI|KL|JK|MK|NZ|IL|ZH|IR|HE|RG)$/i.test(t)) {
     // Taiwan: also try .TWO (TPEx) in case the stock is on the other exchange
     if (/\.TW$/i.test(t)) return [t, t.replace(/\.TW$/i, ".TWO")];
     return [t];
   }
 
-  // Taiwan: 4-digit numeric → try .TW then .TWO (TPEx)
-  if (/^\d{4}$/.test(t)) return [`${t}.TW`, `${t}.TWO`];
-
-  // Japan: 4-digit numeric in Japanese sector → .T
-  if (/^\d{4}T?$/.test(t) && sector?.toLowerCase().includes("japan"))
-    return [`${t.replace(/T$/, "")}.T`];
+  // Japan: known 4-digit numeric tickers
+  if (/^\d{4}$/.test(t)) {
+    if (["9984", "6758", "6501", "6502", "6954", "6861", "6594", "6967"].includes(t))
+      return [`${t}.T`];
+    // Taiwan: other 4-digit → try .TW then .TWO
+    return [`${t}.TW`, `${t}.TWO`];
+  }
 
   // Korea: 6-digit numeric → .KS
   if (/^\d{6}$/.test(t)) return [`${t}.KS`];

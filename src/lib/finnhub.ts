@@ -15,17 +15,33 @@ const API_KEY = () => process.env.FINNHUB_API_KEY!;
 export function finnhubSymbol(ticker: string, sector?: string | null): string {
   const t = ticker.toUpperCase().trim();
 
-  // Taiwan: 4-digit numeric → .TW suffix
-  if (/^\d{4}$/.test(t)) return `${t}.TW`;
+  // Known overrides: text-name tickers from tweet extraction that need
+  // numeric exchange codes, plus tickers with ambiguous regional patterns.
+  const OVERRIDES: Record<string, string> = {
+    SAMSUNG: "005930.KS",
+    "SK HYNIX": "000660.KS",
+    LPKF: "LPK.DE",          // German, not US
+    "002463": "002463.SZ",   // Chinese Shenzhen, not Korean
+    "6967": "6967.T",        // Japanese
+  };
+  if (OVERRIDES[t]) return OVERRIDES[t];
 
-  // Japan: 4-digit numeric with different context → .T suffix
-  if (/^\d{4}T?$/.test(t) && sector?.toLowerCase().includes("japan")) return `${t.replace(/T$/,"")}.T`;
+  // Already has an explicit exchange suffix — pass through
+  if (/\.(TW|T|KS|KQ|SZ|SS|HK|DE|AS|TO|L|PA|VI|SW|CO|MC)$/i.test(t)) return t;
 
-  // Korea: 6-digit numeric → .KS suffix
+  // Japan: known 4-digit numeric tickers (e.g. 9984 Softbank)
+  if (/^\d{4}$/.test(t)) {
+    if (["9984", "6758", "6501", "6502", "6954", "6861", "6594", "6967"].includes(t))
+      return `${t}.T`;
+    // Taiwan: other 4-digit → .TW
+    return `${t}.TW`;
+  }
+
+  // Korea: 6-digit numeric → .KS
   if (/^\d{6}$/.test(t)) return `${t}.KS`;
 
-  // Hong Kong: 4-digit numeric → .HK suffix
-  if (/^\d{4}\.HK$/i.test(t)) return t;
+  // Canada: .A suffix → .TO
+  if (/\.A$/i.test(t)) return t.replace(/\.A$/i, ".TO");
 
   // Default: US / pass-through
   return t;
