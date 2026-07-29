@@ -1,4 +1,7 @@
 import { prisma } from "@/lib/db";
+import { isSchedulerRunning } from "@/lib/scheduler";
+import { getAllAgents } from "@/agents";
+import type { Agent } from "@/agents/types";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -7,101 +10,13 @@ export const dynamic = "force-dynamic";
  * GET /api/agents/status
  *
  * Aggregates agent state from PipelineRun + ApiCallLog into status cards,
- * activity feed, and system health summary. No new tables — reads existing data.
- *
- * 9 agents: Ingest, Research, Analysis, Price, Scoring, Cleanup,
- *           Watchdog, Auditor, Orchestrator
+ * activity feed, and system health summary. Agent definitions come from
+ * the registry (src/agents/registry.ts) instead of a hardcoded list.
  */
 
-// ── Agent definitions ──────────────────────────────────────────────────
+// ── Agent definitions (from registry) ──────────────────────────────────
 
-interface AgentDef {
-  key: string;
-  name: string;
-  emoji: string;
-  stages: string[]; // PipelineRun stages this agent owns
-  description: string;
-}
-
-const AGENTS: AgentDef[] = [
-  {
-    key: "orchestrator",
-    name: "Orchestrator",
-    emoji: "🎯",
-    stages: ["orchestrate"],
-    description: "Coordinates all agents, runs every 30s",
-  },
-  {
-    key: "ingest",
-    name: "Ingest",
-    emoji: "📥",
-    stages: ["sync", "sync_ingest", "sync_extract"],
-    description: "Fetches tweets, extracts tickers and claims",
-  },
-  {
-    key: "research",
-    name: "Research",
-    emoji: "🔬",
-    stages: ["research", "verify", "research-all"],
-    description: "Verifies claims via web search + LLM",
-  },
-  {
-    key: "analysis",
-    name: "Analysis",
-    emoji: "📊",
-    stages: ["summarize", "narrative", "relationship"],
-    description: "Summarizes stocks, writes narratives, maps relationships",
-  },
-  {
-    key: "price",
-    name: "Price",
-    emoji: "💹",
-    stages: ["price_refresh"],
-    description: "Refreshes prices and fundamentals daily",
-  },
-  {
-    key: "scoring",
-    name: "Scoring",
-    emoji: "🏷️",
-    stages: ["scoring"],
-    description: "Assigns opportunity buckets (Strong Buy / Watch / Pass)",
-  },
-  {
-    key: "cleanup",
-    name: "Cleanup",
-    emoji: "🧹",
-    stages: ["cleanup", "dedup"],
-    description: "Finds duplicates and data quality issues",
-  },
-  {
-    key: "watchdog",
-    name: "Watchdog",
-    emoji: "🐕",
-    stages: ["watchdog"],
-    description: "Monitors infrastructure: API errors, rate limits, cost spikes",
-  },
-  {
-    key: "ops",
-    name: "Ops",
-    emoji: "🔧",
-    stages: ["ops"],
-    description: "Fixes infrastructure issues: clears stuck runs, retries failed calls",
-  },
-  {
-    key: "auditor",
-    name: "Auditor",
-    emoji: "🔍",
-    stages: ["auditor"],
-    description: "Checks output quality: contradictions, outliers, unsupported claims",
-  },
-  {
-    key: "editor",
-    name: "Editor",
-    emoji: "✏️",
-    stages: ["editor"],
-    description: "Fixes content issues: re-researches disputed claims, deep-dives gaps",
-  },
-];
+const AGENTS: Agent[] = getAllAgents();
 
 /** Filter that excludes runs already handled by Ops — those were stuck runs
  *  that ops auto-cleared; they should not be re-flagged as errors. */
@@ -238,8 +153,8 @@ async function getAgentStats(stages: string[]) {
   let currentStatus: "running" | "idle" | "error" | "paused" = "idle";
   if (running24h > 0) currentStatus = "running";
   if (failed24h > 0 && completed24h === 0) currentStatus = "error";
-  // Orchestrator: check if PM2 process is running
-  if (stages.includes("orchestrate") && !lastRun) {
+  // Orchestrator: check if in-process scheduler is running
+  if (stages.includes("orchestrate") && !isSchedulerRunning()) {
     currentStatus = "paused";
   }
 

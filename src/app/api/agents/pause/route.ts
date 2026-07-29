@@ -1,15 +1,19 @@
+import {
+  pauseScheduler,
+  resumeScheduler,
+  isSchedulerRunning,
+} from "@/lib/scheduler";
 import { NextRequest, NextResponse } from "next/server";
-import { execSync } from "child_process";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST /api/agents/pause
  *
- * Pauses or resumes the PM2 orchestrator process.
+ * Pauses or resumes the in-process scheduler.
+ * No more pm2 shell commands — just sets an in-memory flag.
  * Body: { action: "pause" | "resume" }
  */
-
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const { action } = body as { action?: string };
@@ -21,27 +25,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  try {
-    if (action === "pause") {
-      execSync("pm2 stop serenity-orchestrator", { timeout: 5000 });
-      return NextResponse.json({ ok: true, status: "paused", message: "Orchestrator paused" });
-    } else {
-      execSync("pm2 start serenity-orchestrator", { timeout: 5000 });
-      return NextResponse.json({ ok: true, status: "running", message: "Orchestrator resumed" });
-    }
-  } catch (e: any) {
-    // If the process doesn't exist, that's fine for stop
-    const msg = e.stderr?.toString() || e.message || "";
-    if (msg.includes("not found") || msg.includes("doesn't exist")) {
-      return NextResponse.json({
-        ok: true,
-        status: action === "pause" ? "paused" : "not_found",
-        message:
-          action === "pause"
-            ? "Orchestrator was already stopped"
-            : "Orchestrator process not found. Start it with: pm2 start scripts/orchestrator.js --name serenity-orchestrator",
-      });
-    }
-    return NextResponse.json({ error: msg }, { status: 500 });
+  if (action === "pause") {
+    pauseScheduler();
+    return NextResponse.json({
+      ok: true,
+      status: "paused",
+      message: "Scheduler paused",
+    });
+  } else {
+    resumeScheduler();
+    return NextResponse.json({
+      ok: true,
+      status: "running",
+      message: "Scheduler resumed",
+    });
   }
 }
