@@ -1,67 +1,142 @@
+/**
+ * Editor — fixes content quality issues found by Auditor.
+ *
+ *   - Deep-research disputed claims
+ *   - Re-research low-confidence verdicts (deep mode)
+ *   - Enqueue re-summarize for stale summaries
+ *   - Enqueue narrative generation for missing narratives
+ *   - AI-human conflicts → flagged for human, cannot auto-resolve
+ *   - Reports everything fixed and everything flagged
+ *
+ * Runs daily at 3 AM, after Auditor.
+ */
+
 import { prisma } from "@/lib/db";
-import { researchNewClaims } from "@/lib/research";
+import { enqueueTask } from "@/lib/pending-tasks";
 import { logPipelineRun } from "@/lib/pipeline-log";
 import { registerAgent } from "./registry";
 import type { Agent, AgentInput, AgentResult } from "./types";
 
 async function run(_input?: AgentInput): Promise<AgentResult> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return { ok: false, message: "DEEPSEEK_API_KEY not configured" };
-
   const fixes: string[] = [];
+  const flagged: string[] = [];
 
   // 1. Deep-research disputed claims
   const disputedClaims = await prisma.claim.findMany({
-    where: { status: "disputed" },
+    where: { status: "disputed", researchStatus: { not: "researching" } },
     include: { stock: { select: { ticker: true } } },
-    take: 5,
+    take: 10,
   });
 
   if (disputedClaims.length > 0) {
-    const tickers = Array.from(new Set(disputedClaims.map((c) => c.stock.ticker)));
-    let researched = 0;
-    for (const t of tickers) {
-      try {
-        const result = await researchNewClaims([t], apiKey, "deep");
-        researched += result.researched;
-      } catch (e: any) {
-        console.error(`[editor] deep research on ${t} failed: ${e.message}`);
-      }
+    for (const c of disputedClaims) {
+      await enqueueTask({
+        kind: "research",
+        claimId: c.id,
+        ticker: c.stock.ticker,
+        source: "scheduler",
+      });
     }
-    if (researched > 0) {
-      fixes.push(
-        `Deep-researched ${researched} disputed claims across ${tickers.length} stocks`
-      );
-    }
+    fixes.push(`Enqueued deep research for ${disputedClaims.length} disputed claims`);
   }
 
-  // 2. Flag depth-4 stocks with zero supporting evidence
-  const depth4Stocks = await prisma.stock.findMany({
-    where: { chokepointDepth: { gte: 4 } },
-    select: {
-      ticker: true,
-      claims: { where: { status: "supported" }, select: { id: true } },
+  // 2. Re-research low-confidence verdicts (deep mode detects this in the two-pass)
+  const lowConfClaims = await prisma.claim.findMany({
+    where: {
+      researchStatus: "done",
+      status: { in: ["supported", "refuted"] },
+      evidence: { contains: "(low)" },
     },
+    select: { id: true, stock: { select: { ticker: true } } },
+    take: 10,
   });
 
-  const unsupported = depth4Stocks.filter((s) => s.claims.length === 0);
-  if (unsupported.length > 0) {
-    fixes.push(
-      `${unsupported.length} depth-4+ stocks need evidence: ` +
-        unsupported.map((s) => `$${s.ticker}`).join(", ")
+  if (lowConfClaims.length > 0) {
+    for (const c of lowConfClaims) {
+      await enqueueTask({
+        kind: "research",
+        claimId: c.id,
+        ticker: c.stock.ticker,
+        source: "scheduler",
+      });
+    }
+    fixes.push(`Enqueued re-research for ${lowConfClaims.length} low-confidence verdicts`);
+  }
+
+  // 3. Enqueue re-summarize for stale summaries
+  const staleSummaryStocks = await prisma.stock.findMany({
+    where: { summary: { not: null } },
+    select: {
+      ticker: true,
+      lastSummaryAt: true,
+      claims: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
+    },
+  });
+  const stale = staleSummaryStocks.filter(
+    (s) =>
+      s.lastSummaryAt &&
+      s.claims.length > 0 &&
+      s.claims[0].createdAt > s.lastSummaryAt
+  );
+  if (stale.length > 0) {
+    for (const s of stale.slice(0, 10)) {
+      await enqueueTask({ kind: "summarize", ticker: s.ticker, source: "scheduler" });
+    }
+    fixes.push(`Enqueued re-summarize for ${Math.min(stale.length, 10)} stale stocks`);
+  }
+
+  // 4. Enqueue narrative for missing narratives on high-depth stocks
+  const missingNarrative = await prisma.stock.findMany({
+    where: {
+      chokepointDepth: { gte: 4 },
+      summary: { not: null },
+      narrative: null,
+    },
+    select: { ticker: true },
+    take: 10,
+  });
+  if (missingNarrative.length > 0) {
+    for (const s of missingNarrative) {
+      await enqueueTask({ kind: "narrative", ticker: s.ticker, source: "scheduler" });
+    }
+    fixes.push(`Enqueued narrative for ${missingNarrative.length} depth-4+ stocks`);
+  }
+
+  // 5. AI-human conflicts — flag for human review
+  const skepticalWords = /\b(disagree|wrong|incorrect|not true|doubt|skeptical|question|unsure|maybe not)\b/i;
+  const conflicts = await prisma.claim.findMany({
+    where: {
+      status: "supported",
+      humanNote: { not: null },
+    },
+    select: { id: true, text: true, humanNote: true, stock: { select: { ticker: true } } },
+    take: 20,
+  });
+  const flaggedConflicts = conflicts.filter((c) => c.humanNote && skepticalWords.test(c.humanNote));
+  if (flaggedConflicts.length > 0) {
+    flagged.push(
+      `${flaggedConflicts.length} AI-human conflicts flagged: ` +
+        flaggedConflicts.map((c) => `$${c.stock.ticker} claim#${c.id}`).join(", ")
     );
   }
 
   await logPipelineRun({
     stage: "editor",
     status: "completed",
-    decision: fixes.length === 0 ? "Nothing to fix" : fixes.join("; "),
+    decision:
+      fixes.length === 0 && flagged.length === 0
+        ? "Nothing to fix"
+        : [...fixes, ...flagged].join("; "),
   });
 
   return {
     ok: true,
-    message: fixes.length === 0 ? "Nothing to fix" : fixes.join(". "),
+    message:
+      fixes.length === 0 && flagged.length === 0
+        ? "Nothing to fix"
+        : [...fixes, ...flagged].join(". "),
     fixes,
+    flagged,
   };
 }
 
@@ -69,7 +144,7 @@ const agent: Agent = {
   key: "editor",
   name: "Editor",
   emoji: "✏️",
-  description: "Fixes content quality issues found by Auditor",
+  description: "Fixes content quality issues; flags conflicts for human review",
   stages: ["editor"],
   run,
 };

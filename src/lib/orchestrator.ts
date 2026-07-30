@@ -4,22 +4,23 @@
  * Contains the main orchestratorTick() function that the scheduler calls
  * every 30s, plus schedule helpers shared with scheduler.ts.
  *
- * Individual agent logic has been extracted into src/agents/<name>.ts
- * behind a shared Agent interface. The scheduler dispatches through
- * the agent registry instead of calling functions here directly.
+ * The orchestrator decides WHAT to run and WHEN. All actual work is delegated
+ * to agents via the PendingTask queue or agent registry.
  */
 
 import { prisma } from "@/lib/db";
-import { researchClaim } from "@/lib/research";
 import { summarizeStock, needsSummary } from "@/lib/summarize";
 import { generateNarrative } from "@/lib/narrative";
 import { runExtractions } from "@/lib/relationships";
+import { researchClaim } from "@/lib/research";
+import { generateInvestmentThesis, saveThesis } from "@/lib/decision";
 import { checkForOrders, parseResearchCommand, sendMessage } from "@/lib/telegram";
 import { logPipelineRun } from "@/lib/pipeline-log";
 import {
   drainPendingTasks,
   enqueueTask,
   hasPendingTask,
+  notifyBatchComplete,
   type TaskHandlers,
 } from "@/lib/pending-tasks";
 
@@ -31,7 +32,7 @@ export interface OrchestratorTickResult {
   actions: string[];
 }
 
-// ── Schedule state (persisted via ScheduleState, survives restarts) ────────
+// ── Schedule state (persisted via ScheduleState, survives restarts) ────
 
 /** In-memory cache of last-run timestamps, loaded from ScheduleState on boot.
  *  Persisted so a restart inside a job's hour window can't fire it twice. */
@@ -73,7 +74,7 @@ export function isSunday(): boolean {
   return new Date().getUTCDay() === 0;
 }
 
-// ── Task handlers for the drain (injected into drainPendingTasks) ──────────
+// ── Task handlers for the drain (injected into drainPendingTasks) ──────
 
 const taskHandlers: TaskHandlers = {
   research: async (claimId, ticker, apiKey) => {
@@ -88,18 +89,26 @@ const taskHandlers: TaskHandlers = {
   narrative: async (ticker, apiKey) => {
     await generateNarrative(ticker, apiKey);
   },
+  decision: async (ticker, apiKey) => {
+    const result = await generateInvestmentThesis(ticker, apiKey);
+    if (result.thesis) {
+      await saveThesis(ticker, result.thesis);
+    } else {
+      throw new Error(result.error || "no thesis generated");
+    }
+  },
 };
 
 // ── Core orchestration tick ────────────────────────────────────────────
 
 /**
  * The main orchestration tick — called every 30s by the scheduler.
- * Also callable directly via the API route for manual triggers.
  *
- * Each tick does at most ONE batch of work:
- *   1. Telegram orders (if configured)
- *   2. Auto-research pending claims (when no Telegram)
- *   3. Summarize one stale stock
+ * Each tick:
+ *   1. Telegram orders → enqueue research tasks (source: "telegram")
+ *   2. Catch-up: enqueue research for pending claims, summarize for stale stocks
+ *   3. Drain the task queue (atomic claim, bounded retries)
+ *   4. Send batch Telegram notifications for completed/failed tasks
  */
 export async function orchestratorTick(): Promise<OrchestratorTickResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -118,12 +127,13 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
   let workDone = false;
   const actions: string[] = [];
 
-  // ── 1. Check for Telegram orders ────────────────────────────────────
+  // ── 1. Check for Telegram orders → enqueue (don't execute) ──────────
   if (telegramConfigured) {
     const commands = await checkForOrders();
 
     if (commands.length > 0) {
       for (const cmd of commands) {
+        // Match command to triage entry by reply_to_message_id
         let pendingRun = null;
         if (cmd.replyToMessageId) {
           const allPending = await prisma.pipelineRun.findMany({
@@ -160,23 +170,6 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
 
         const parsed = parseResearchCommand(cmd.command, pendingClaims);
 
-        if (parsed.action === "research" && parsed.claimIds.length === 0) {
-          const allPending = await prisma.claim.findMany({
-            where: {
-              status: "unverified",
-              researchStatus: { in: ["pending", "failed"] },
-            },
-            select: { id: true },
-            orderBy: { createdAt: "asc" },
-          });
-          if (allPending.length > 0) {
-            parsed.claimIds = allPending.map((c) => c.id);
-            void sendMessage(
-              `⚠️ Couldn't match your reply to a specific notification. Researching all ${allPending.length} pending claims instead.`
-            ).catch(() => {});
-          }
-        }
-
         if (parsed.action === "skip") {
           actions.push("Telegram: user skipped");
           if (pendingRun) {
@@ -192,29 +185,32 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
 
         if (parsed.claimIds.length > 0) {
           const depthLabel = parsed.depth === "deep" ? "deep" : "quick";
-          void sendMessage(
-            `👀 On it — researching ${parsed.claimIds.length} claim(s) (${depthLabel})…`
-          ).catch(() => {});
 
-          let researched = 0;
+          // Enqueue each claim as a task (instead of executing inline).
+          // The drain below will pick them up and run through the retry pipeline.
+          let enqueued = 0;
           for (const claimId of parsed.claimIds) {
             const claim = await prisma.claim.findUnique({
               where: { id: claimId },
               select: { stock: { select: { ticker: true } } },
             });
             if (!claim) continue;
-            try {
-              await researchClaim(claimId, claim.stock.ticker, apiKey, parsed.depth);
-              researched++;
-            } catch (e: any) {
-              console.error(
-                `[orchestrator] research claim #${claimId} failed: ${e.message}`
-              );
-            }
+            await enqueueTask({
+              kind: "research",
+              claimId,
+              ticker: claim.stock.ticker,
+              source: "telegram",
+            });
+            enqueued++;
           }
 
-          actions.push(`Telegram: researched ${researched} claims (${depthLabel})`);
+          actions.push(
+            `Telegram: enqueued ${enqueued} research tasks (${depthLabel})`
+          );
 
+          // For deep research, also enqueue through the drain (the enqueue just
+          // queues; actual deep mode is handled by the research handler).
+          // Mark triage as acknowledged.
           if (pendingRun) {
             await prisma.pipelineRun.update({
               where: { id: pendingRun.id },
@@ -223,7 +219,7 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
           }
 
           void sendMessage(
-            `✅ Done — researched ${researched} claim(s) (${depthLabel}).`
+            `👀 Queued ${enqueued} claim(s) for research (${depthLabel}). Will update when done.`
           ).catch(() => {});
           workDone = true;
         }
@@ -231,18 +227,10 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
     }
   }
 
-  // ── 2. Catch-up + drain the persisted task queue ────────────────────
-  // Reactivity is event-driven (enqueueTask); this is the safety net that
-  // also recovers work events can't see (a file uploaded directly) or that
-  // was lost to a restart. The drain's atomic claim guarantees no two ticks
-  // run the same stock's work at once — this stops the concurrent
-  // summarize/relationship collisions that caused the watchdog→ops timeout
-  // loop. (ADR-0001)
+  // ── 2. Catch-up: enqueue pending work ───────────────────────────────
   if (!workDone) {
-    // 2a. Enqueue research for pending claims (safety net — sync already
-    // enqueues for newly-extracted claims). Low-impact auto-researches;
-    // high-impact waits for Telegram review when configured. Dedup in
-    // enqueueTask means re-enqueuing an already-pending task is a no-op.
+    // 2a. Research for pending claims (low-impact when Telegram configured;
+    //     high-impact waits for Telegram review).
     const researchWhere: { researchStatus: { in: string[] }; OR?: any[] } = {
       researchStatus: { in: ["pending", "failed"] },
     };
@@ -256,10 +244,15 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
       take: 5,
     });
     for (const c of pendingResearch) {
-      await enqueueTask({ kind: "research", claimId: c.id, ticker: c.stock.ticker });
+      await enqueueTask({
+        kind: "research",
+        claimId: c.id,
+        ticker: c.stock.ticker,
+        source: "scheduler",
+      });
     }
 
-    // 2b. Enqueue summarize for stocks with new content but no pending task.
+    // 2b. Summarize for stale stocks with content.
     const stocksToCheck = await prisma.stock.findMany({
       select: {
         ticker: true,
@@ -273,9 +266,6 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
     });
 
     const stale = stocksToCheck.filter((s) => needsSummary(s));
-    // Only enqueue if there's indexable content: claims, notes, or a file
-    // that was converted to markdown (matches summarizeStock's buildContext,
-    // which ignores files whose markdown is null).
     const actionable = stale.filter(
       (s) =>
         s.claims.length > 0 ||
@@ -286,39 +276,29 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
     let enqueued = 0;
     for (const s of actionable.slice(0, 3)) {
       if (!(await hasPendingTask("summarize", s.ticker))) {
-        await enqueueTask({ kind: "summarize", ticker: s.ticker });
+        await enqueueTask({
+          kind: "summarize",
+          ticker: s.ticker,
+          source: "scheduler",
+        });
         actions.push(`Queued summary: $${s.ticker}`);
         enqueued++;
       }
     }
 
-    // 2b. Drain due research/summarize/extract/narrative tasks.
+    // 2c. Drain the task queue (research, summarize, extract, narrative, decision).
     const drained = await drainPendingTasks(apiKey, taskHandlers, 5);
     actions.push(...drained.actions);
+
+    // 2d. Send batch Telegram notification for completed/failed tasks.
+    if (drained.notifications.length > 0) {
+      void notifyBatchComplete(drained.notifications);
+    }
+
     if (enqueued > 0 || drained.ran > 0) workDone = true;
   }
 
-  // ── 3. Stale-research refresh (daily at 5 AM UTC) ───────────────────
-  // Re-queue claims whose verdicts have gone stale so the AI's authoritative
-  // status stays current. Capped (20/day) + impact-prioritized.
-  if (isHourWindow(5, "staleResearch")) {
-    await markRun("staleResearch");
-    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    const staleClaims = await prisma.claim.findMany({
-      where: { researchStatus: "done", researchedAt: { lt: cutoff } },
-      select: { id: true, stock: { select: { ticker: true } } },
-      orderBy: { impactScore: "desc" },
-      take: 20,
-    });
-    for (const c of staleClaims) {
-      await enqueueTask({ kind: "research", claimId: c.id, ticker: c.stock.ticker });
-    }
-    if (staleClaims.length > 0) {
-      actions.push(`Stale research: queued ${staleClaims.length}`);
-    }
-  }
-
-  // ── Log every tick ───────────────────────────────────────────────────
+  // ── 3. Log every tick ───────────────────────────────────────────────
   await logPipelineRun({
     stage: "orchestrate",
     status: "completed",

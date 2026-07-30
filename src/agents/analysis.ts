@@ -1,29 +1,37 @@
+/**
+ * Analysis agent — understands each stock through summarization + relationships + narrative.
+ *
+ * All actual work is enqueued through the PendingTask queue. The drain
+ * executes summarize → extract → narrative as a chain. This agent's run()
+ * just finds stale stocks and enqueues them.
+ */
+
 import { prisma } from "@/lib/db";
-import { summarizeStock, needsSummary } from "@/lib/summarize";
-import { generateNarrative } from "@/lib/narrative";
-import { runExtractions } from "@/lib/relationships";
+import { needsSummary } from "@/lib/summarize";
+import { enqueueTask, hasPendingTask } from "@/lib/pending-tasks";
+import { logPipelineRun } from "@/lib/pipeline-log";
 import { registerAgent } from "./registry";
 import type { Agent, AgentInput, AgentResult } from "./types";
 
 async function run(input?: AgentInput): Promise<AgentResult> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return { ok: false, message: "DEEPSEEK_API_KEY not configured" };
-
   const ticker = input?.ticker;
 
+  // Single-stock trigger (from "Run Now" on stock page)
   if (ticker) {
-    await summarizeStock(ticker, apiKey);
-    void runExtractions(ticker, apiKey).catch(() => {});
-    void generateNarrative(ticker, apiKey).catch(() => {});
-    return { ok: true, message: `Analyzed $${ticker}`, ticker };
+    await enqueueTask({ kind: "summarize", ticker, source: "manual" });
+    return {
+      ok: true,
+      message: `Enqueued summarize for $${ticker}`,
+      ticker,
+    };
   }
 
-  // Find the most stale stock
+  // Bulk: find stale stocks and enqueue
   const stocksToCheck = await prisma.stock.findMany({
     select: {
       ticker: true,
       lastSummaryAt: true,
-      files: { select: { createdAt: true } },
+      files: { select: { createdAt: true, markdown: true } },
       notes: { select: { createdAt: true } },
       claims: { select: { createdAt: true, updatedAt: true } },
     },
@@ -32,22 +40,48 @@ async function run(input?: AgentInput): Promise<AgentResult> {
   });
 
   const stale = stocksToCheck.filter((s) => needsSummary(s));
-  if (stale.length === 0) {
-    return { ok: true, message: "All stocks up to date" };
+  const actionable = stale.filter(
+    (s) =>
+      s.claims.length > 0 ||
+      s.notes.length > 0 ||
+      s.files.some((f) => f.markdown)
+  );
+
+  let enqueued = 0;
+  for (const s of actionable.slice(0, 3)) {
+    if (!(await hasPendingTask("summarize", s.ticker))) {
+      await enqueueTask({ kind: "summarize", ticker: s.ticker, source: "manual" });
+      enqueued++;
+    }
   }
 
-  const s = stale[0];
-  await summarizeStock(s.ticker, apiKey);
-  void runExtractions(s.ticker, apiKey).catch(() => {});
-  void generateNarrative(s.ticker, apiKey).catch(() => {});
-  return { ok: true, message: `Analyzed $${s.ticker}`, ticker: s.ticker };
+  await logPipelineRun({
+    stage: "summarize",
+    status: "completed",
+    decision:
+      enqueued > 0
+        ? `Enqueued summarize for ${enqueued} stocks`
+        : actionable.length === 0
+          ? "All stocks up to date"
+          : "Stale stocks already queued",
+  });
+
+  return {
+    ok: true,
+    message:
+      enqueued > 0
+        ? `Enqueued summarize for ${enqueued} stocks`
+        : actionable.length === 0
+          ? "All stocks up to date"
+          : `${actionable.length} stale stocks already queued`,
+  };
 }
 
 const agent: Agent = {
   key: "analysis",
   name: "Analysis",
   emoji: "📊",
-  description: "Summarizes stocks, writes narratives, maps relationships",
+  description: "Summarizes stocks, writes narratives, maps relationships (via task queue)",
   stages: ["summarize", "narrative", "relationship"],
   run,
 };

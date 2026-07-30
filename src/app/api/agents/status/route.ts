@@ -89,12 +89,19 @@ async function getAgentStats(stages: string[]) {
     metric = { label: "Stocks analyzed", value: String(count) };
   }
 
-  // Research agent: pending claims
+  // Research agent: pending claims + content coverage stats
   if (stages.includes("research")) {
-    const pending = await prisma.claim.count({
-      where: { status: "unverified" },
-    });
-    metric = { label: "Claims pending", value: String(pending) };
+    const [pending, emptyStocks] = await Promise.all([
+      prisma.claim.count({ where: { status: "unverified" } }),
+      prisma.stock.count({
+        where: {
+          claims: { none: {} },
+          notes: { none: {} },
+          files: { none: { markdown: { not: null } } },
+        },
+      }),
+    ]);
+    metric = { label: "Pending / Empty", value: `${pending} / ${emptyStocks}` };
   }
 
   // Price agent: stocks with prices
@@ -119,12 +126,19 @@ async function getAgentStats(stages: string[]) {
     metric = { label: "Errors (24h)", value: String(errors24h) };
   }
 
-  // Auditor: unresolved contradictions (claims with status "disputed")
+  // Auditor: unresolved contradictions + stale research count
   if (stages.includes("auditor")) {
-    const disputed = await prisma.claim.count({
-      where: { status: "disputed" },
-    });
-    metric = { label: "Disputed claims", value: String(disputed) };
+    const [disputed, staleResearch] = await Promise.all([
+      prisma.claim.count({ where: { status: "disputed" } }),
+      prisma.claim.count({
+        where: {
+          researchStatus: "done",
+          researchedAt: { lt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
+          status: { not: "disputed" },
+        },
+      }),
+    ]);
+    metric = { label: "Disputed / Stale", value: `${disputed} / ${staleResearch}` };
   }
 
   // Ops: stuck runs + failed API calls fixed
@@ -138,15 +152,20 @@ async function getAgentStats(stages: string[]) {
     metric = { label: "Stuck runs", value: String(stuck) };
   }
 
-  // Editor: claims auto-fixed (disputed claims that were re-researched)
+  // Editor: claims fixed (disputed re-researched) + AI-human conflicts
   if (stages.includes("editor")) {
-    const depth4NoEvidence = await prisma.stock.count({
-      where: {
-        chokepointDepth: { gte: 4 },
-        claims: { none: { status: "supported" } },
-      },
-    });
-    metric = { label: "Depth-4 gaps", value: String(depth4NoEvidence) };
+    const [depth4NoEvidence, conflicts] = await Promise.all([
+      prisma.stock.count({
+        where: {
+          chokepointDepth: { gte: 4 },
+          claims: { none: { status: "supported" } },
+        },
+      }),
+      prisma.claim.count({
+        where: { status: "supported", humanNote: { not: null } },
+      }),
+    ]);
+    metric = { label: "Depth-4 gaps / Conflicts", value: `${depth4NoEvidence} / ${conflicts}` };
   }
 
   // Determine current status

@@ -13,15 +13,19 @@
 
 import { prisma } from "@/lib/db";
 import { logPipelineRun, completePipelineRun, type PipelineStage } from "@/lib/pipeline-log";
+import { sendMessage } from "@/lib/telegram";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export type TaskKind = "research" | "summarize" | "extract" | "narrative";
+export type TaskKind = "research" | "summarize" | "extract" | "narrative" | "decision";
+
+export type TaskSource = "telegram" | "scheduler" | "manual";
 
 export interface EnqueueInput {
   kind: TaskKind;
   ticker?: string;
   claimId?: number;
+  source?: TaskSource;
   /** When the task becomes eligible to run. Defaults to now. */
   dueAt?: Date;
 }
@@ -34,6 +38,7 @@ export interface TaskHandlers {
   summarize: (ticker: string, apiKey: string) => Promise<void>;
   extract: (ticker: string, apiKey: string) => Promise<void>;
   narrative: (ticker: string, apiKey: string) => Promise<void>;
+  decision: (ticker: string, apiKey: string) => Promise<void>;
 }
 
 export const MAX_ATTEMPTS = 3;
@@ -43,6 +48,7 @@ const TASK_KIND_TO_STAGE: Record<TaskKind, PipelineStage> = {
   summarize: "summarize",
   extract: "relationship",
   narrative: "narrative",
+  decision: "decision",
 };
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
@@ -83,7 +89,7 @@ export async function enqueueTask(input: EnqueueInput): Promise<void> {
   if (existing) {
     await prisma.pendingTask.update({
       where: { id: existing.id },
-      data: { dueAt },
+      data: { dueAt, source: input.source ?? null },
     });
     return;
   }
@@ -93,6 +99,7 @@ export async function enqueueTask(input: EnqueueInput): Promise<void> {
       kind: input.kind,
       ticker: input.ticker ?? null,
       claimId: input.claimId ?? null,
+      source: input.source ?? null,
       status: "pending",
       dueAt,
     },
@@ -135,12 +142,15 @@ async function completeTask(id: number): Promise<void> {
 
 /**
  * Record a failure: bump attempts, schedule a backoff retry, or mark dead.
- * Returns the new status ("pending" | "dead").
+ * Returns the new status ("pending" | "dead") and the task's kind + ticker for notification.
  */
-export async function failTask(id: number, error: string): Promise<"pending" | "dead"> {
+export async function failTask(
+  id: number,
+  error: string
+): Promise<{ status: "pending" | "dead"; kind: string; ticker: string | null }> {
   const task = await prisma.pendingTask.findUnique({
     where: { id },
-    select: { attempts: true },
+    select: { attempts: true, kind: true, ticker: true },
   });
   const attempts = (task?.attempts ?? 0) + 1;
 
@@ -149,7 +159,7 @@ export async function failTask(id: number, error: string): Promise<"pending" | "
       where: { id },
       data: { status: "dead", attempts, lastError: error.slice(0, 1000) },
     });
-    return "dead";
+    return { status: "dead", kind: task?.kind ?? "unknown", ticker: task?.ticker ?? null };
   }
 
   await prisma.pendingTask.update({
@@ -161,7 +171,7 @@ export async function failTask(id: number, error: string): Promise<"pending" | "
       lastError: error.slice(0, 1000),
     },
   });
-  return "pending";
+  return { status: "pending", kind: task?.kind ?? "unknown", ticker: task?.ticker ?? null };
 }
 
 // ── Dispatch ────────────────────────────────────────────────────────────────
@@ -203,6 +213,11 @@ async function dispatch(
       await handlers.narrative(task.ticker, apiKey);
       break;
     }
+    case "decision": {
+      if (!task.ticker) throw new Error("decision task missing ticker");
+      await handlers.decision(task.ticker, apiKey);
+      break;
+    }
     default:
       throw new Error(`unknown task kind: ${task.kind}`);
   }
@@ -216,6 +231,8 @@ export interface DrainResult {
   failed: number;
   dead: number;
   actions: string[];
+  /** Telegram notifications to send after drain completes */
+  notifications: { ticker: string; kind: string; ok: boolean; error?: string }[];
 }
 
 /**
@@ -231,6 +248,7 @@ export async function drainPendingTasks(
 ): Promise<DrainResult> {
   const tasks = await claimDueTasks(limit);
   const actions: string[] = [];
+  const notifications: DrainResult["notifications"] = [];
   let succeeded = 0;
   let failed = 0;
   let dead = 0;
@@ -242,7 +260,7 @@ export async function drainPendingTasks(
       status: "started",
       stockTicker: task.ticker,
       claimId: task.claimId,
-      input: { attempts: task.attempts, kind: task.kind },
+      input: { attempts: task.attempts, kind: task.kind, source: (task as any).source },
     });
 
     try {
@@ -251,6 +269,18 @@ export async function drainPendingTasks(
       if (runId) await completePipelineRun(runId, { status: "completed", decision: `${task.kind} done` });
       succeeded++;
       actions.push(`${task.kind}: ${task.ticker ?? `claim#${task.claimId}`}`);
+
+      // Telegram notification for telegram-sourced tasks
+      const source = (task as any).source;
+      if (source === "telegram" && task.ticker) {
+        notifications.push({ ticker: task.ticker, kind: task.kind, ok: true });
+      }
+
+      // Chain: summarize → enqueue extract + narrative
+      if (task.kind === "summarize" && task.ticker) {
+        void enqueueTask({ kind: "extract", ticker: task.ticker, source: "scheduler" });
+        void enqueueTask({ kind: "narrative", ticker: task.ticker, source: "scheduler" });
+      }
     } catch (e: any) {
       const msg = e?.message?.slice(0, 500) || "Unknown error";
 
@@ -264,19 +294,68 @@ export async function drainPendingTasks(
         continue;
       }
 
-      const status = await failTask(task.id, msg);
+      const result = await failTask(task.id, msg);
       if (runId) await completePipelineRun(runId, { status: "failed", error: msg });
-      if (status === "dead") {
+      if (result.status === "dead") {
         dead++;
         if (task.kind === "research" && task.claimId != null) {
           await prisma.claim
             .update({ where: { id: task.claimId }, data: { researchStatus: "dead" } })
             .catch(() => {});
         }
+        // Notify about dead tasks that came from Telegram
+        const source = (task as any).source;
+        if (source === "telegram" && task.ticker) {
+          notifications.push({
+            ticker: task.ticker,
+            kind: task.kind,
+            ok: false,
+            error: msg,
+          });
+        }
       }
       failed++;
     }
   }
 
-  return { ran: tasks.length, succeeded, failed, dead, actions };
+  return { ran: tasks.length, succeeded, failed, dead, actions, notifications };
+}
+
+// ── Telegram notification helper ────────────────────────────────────────────
+
+/** Send a summary notification after a batch of Telegram-sourced tasks finishes. */
+export async function notifyBatchComplete(
+  notifications: DrainResult["notifications"]
+): Promise<void> {
+  if (notifications.length === 0) return;
+
+  const telegramConfigured = !!(
+    process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID
+  );
+  if (!telegramConfigured) return;
+
+  const succeeded = notifications.filter((n) => n.ok);
+  const failed = notifications.filter((n) => !n.ok);
+
+  const parts: string[] = [];
+  if (succeeded.length > 0) {
+    const byKind = new Map<string, string[]>();
+    for (const n of succeeded) {
+      const list = byKind.get(n.kind) || [];
+      list.push(`$${n.ticker}`);
+      byKind.set(n.kind, list);
+    }
+    byKind.forEach((tickers, kind) => {
+      parts.push(`✅ ${kind}: ${tickers.join(", ")}`);
+    });
+  }
+  if (failed.length > 0) {
+    for (const n of failed) {
+      parts.push(`❌ ${n.kind} $${n.ticker}: ${n.error?.slice(0, 100) || "failed"}`);
+    }
+  }
+
+  if (parts.length > 0) {
+    await sendMessage(parts.join("\n")).catch(() => {});
+  }
 }

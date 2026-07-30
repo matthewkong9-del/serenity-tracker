@@ -1,16 +1,13 @@
 /**
  * Decision agent — deep investment thesis generation for top opportunities.
  *
- * Runs daily at 4:30 AM UTC (after price refresh + auditor/editor).
- * Finds the top ~10 scored stocks with summaries, generates a deep
- * investment thesis for each, and persists to the Decision table.
- *
- * This is the "autonomous endgame" agent — it reviews the full research
- * dossier and produces buy/hold/sell recommendations.
+ * Runs daily at 4 AM. Finds top 10 scored stocks with summaries, enqueues
+ * thesis generation through the task queue (new `decision` task kind).
+ * The drain executes each thesis and notifies Telegram on completion.
  */
 
 import { prisma } from "@/lib/db";
-import { generateInvestmentThesis, saveThesis } from "@/lib/decision";
+import { enqueueTask } from "@/lib/pending-tasks";
 import { assignBucket, type ScoringInput } from "@/lib/scoring";
 import { logPipelineRun } from "@/lib/pipeline-log";
 import { registerAgent } from "./registry";
@@ -69,51 +66,38 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
   const candidates = scored.slice(0, TOP_N);
 
   if (candidates.length === 0) {
+    await logPipelineRun({
+      stage: "decision",
+      status: "completed",
+      decision: "No scored stocks with summaries found",
+    });
     return { ok: true, message: "No scored stocks with summaries found" };
   }
 
-  console.log(
-    `[decision] analyzing top ${candidates.length} opportunities: ${candidates.map((c) => c.ticker).join(", ")}`
-  );
-
-  let generated = 0;
-  let failed = 0;
-
+  // Enqueue each thesis through the task queue for reliability.
+  // The drain will execute, retry on failure, and notify Telegram.
   for (const c of candidates) {
-    try {
-      const result = await generateInvestmentThesis(c.ticker, apiKey);
-      if (result.thesis) {
-        await saveThesis(c.ticker, result.thesis);
-        generated++;
-        console.log(
-          `[decision] ${c.ticker}: ${result.thesis.action.toUpperCase()} (${result.thesis.confidence})`
-        );
-      } else {
-        failed++;
-        console.warn(`[decision] ${c.ticker}: ${result.error || "no thesis generated"}`);
-      }
-    } catch (e: any) {
-      failed++;
-      console.error(`[decision] ${c.ticker} error: ${e.message}`);
-    }
+    await enqueueTask({
+      kind: "decision",
+      ticker: c.ticker,
+      source: "scheduler",
+    });
   }
+
+  console.log(
+    `[decision] enqueued ${candidates.length} theses: ${candidates.map((c) => c.ticker).join(", ")}`
+  );
 
   await logPipelineRun({
     stage: "decision",
     status: "completed",
-    decision: `Generated ${generated} theses, ${failed} failed out of ${candidates.length} candidates`,
-    output: {
-      candidates: candidates.map((c) => c.ticker),
-      generated,
-      failed,
-    },
+    decision: `Enqueued ${candidates.length} investment theses`,
+    output: { candidates: candidates.map((c) => c.ticker) },
   });
 
   return {
     ok: true,
-    message: `Generated ${generated} investment theses (${failed} failed)`,
-    generated,
-    failed,
+    message: `Enqueued ${candidates.length} investment theses via task queue`,
     candidates: candidates.map((c) => c.ticker),
   };
 }
@@ -122,7 +106,7 @@ const agent: Agent = {
   key: "decision",
   name: "Decision",
   emoji: "🧠",
-  description: "Deep investment thesis generation for top-scored opportunities",
+  description: "Deep investment thesis generation for top-scored opportunities (via task queue)",
   stages: ["decision"],
   run,
 };

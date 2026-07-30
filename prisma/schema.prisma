@@ -196,9 +196,10 @@ model Annotation {
 // The orchestrator's 30s tick drains due rows; retries are bounded by `attempts`.
 model PendingTask {
   id        Int      @id @default(autoincrement())
-  kind      String   // "research" | "summarize" | "extract" | "narrative"
+  kind      String   // "research" | "summarize" | "extract" | "narrative" | "decision"
   ticker    String?
   claimId   Int?
+  source    String?  // "telegram" | "scheduler" | "manual" — who asked for this work
   status    String   @default("pending") // "pending" | "claimed" | "done" | "dead"
   attempts  Int      @default(0)
   dueAt     DateTime @default(now())

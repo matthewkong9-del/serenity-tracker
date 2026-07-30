@@ -101,7 +101,22 @@ async function tick(): Promise<void> {
       console.log(`[scheduler] 🧹 cleanup: ${cl?.message || "triggered"}`);
     }
 
-    // ── 7. Decision: daily at 4 AM UTC (deep thesis generation) ──
+    // ── 7. Research: content coverage + stale re-research, daily at 5 AM ──
+    if (isHourWindow(5, "researchDaily")) {
+      await markRun("researchDaily");
+      const rs = await getAgent("research")?.run({ mode: "stale" } as any);
+      console.log(`[scheduler] 🔬 research (stale): ${rs?.message || "triggered"}`);
+      // Content coverage runs weekly (Sunday) to control API costs
+      if (isSunday()) {
+        const rc = await getAgent("research")?.run({ mode: "coverage" } as any);
+        console.log(`[scheduler] 🔬 research (coverage): ${rc?.message || "triggered"}`);
+        // Quality review also weekly
+        const rq = await getAgent("research")?.run({ mode: "quality" } as any);
+        console.log(`[scheduler] 🔬 research (quality): ${rq?.message || "triggered"}`);
+      }
+    }
+
+    // ── 8. Decision: daily at 4 AM UTC (deep thesis generation) ──
     if (isHourWindow(4, "decision")) {
       await markRun("decision");
       const dc = await getAgent("decision")?.run();
@@ -128,7 +143,7 @@ export async function startScheduler(): Promise<void> {
     `[scheduler] starting — tick every ${TICK_INTERVAL_MS / 1000}s`
   );
   console.log(
-    `[scheduler] schedule: watchdog+ops(5m) ingest(1h) price(2AM) auditor+editor(3AM) decision(4AM) cleanup(Sun 4AM)`
+    `[scheduler] schedule: watchdog+ops(5m) ingest(1h) price(2AM) auditor+editor(3AM) decision(4AM) research(5AM+Sun) cleanup(Sun 4AM)`
   );
 
   // Run one tick immediately, then every TICK_INTERVAL_MS

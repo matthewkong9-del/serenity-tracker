@@ -1,3 +1,13 @@
+/**
+ * Ingest agent — fetches tweets, extracts claims, enqueues downstream work.
+ *
+ * Runs hourly via the scheduler. Calls sync logic through the API route
+ * (the sync pipeline is complex enough to keep as a route), then enqueues
+ * summarize tasks for stocks that received new claims.
+ */
+
+import { prisma } from "@/lib/db";
+import { enqueueTask } from "@/lib/pending-tasks";
 import { registerAgent } from "./registry";
 import type { Agent, AgentInput, AgentResult } from "./types";
 
@@ -8,9 +18,34 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
   if (!syncUrl) return { ok: false, message: "SYNC_CSV_URL not configured" };
 
   try {
-    const res = await fetch(`${BASE_URL}/api/sync`, { method: "POST" });
+    const res = await fetch(`${BASE_URL}/api/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ csvUrl: syncUrl }),
+    });
     const result = await res.json();
-    return { ok: res.ok, message: "Ingest (sync) triggered", ...result };
+
+    if (!res.ok) {
+      return { ok: false, message: `Ingest failed: ${result.error || res.statusText}` };
+    }
+
+    // Enqueue summarize for stocks that got new claims (the sync route already
+    // enqueues research tasks for auto-eligible claims).
+    if (result.totalClaims > 0 && result.newStocks?.length > 0) {
+      for (const ticker of result.newStocks) {
+        await enqueueTask({
+          kind: "summarize",
+          ticker,
+          source: "scheduler",
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      message: `Synced: ${result.newTweets} new tweets, ${result.totalClaims} claims, ${result.skippedTweets} skipped`,
+      ...result,
+    };
   } catch (e: any) {
     return { ok: false, message: `Ingest failed: ${e.message}` };
   }
