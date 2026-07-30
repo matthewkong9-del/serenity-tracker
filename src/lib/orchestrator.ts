@@ -247,7 +247,7 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
         lastSummaryAt: true,
         files: { select: { createdAt: true } },
         notes: { select: { createdAt: true } },
-        claims: { select: { createdAt: true } },
+        claims: { select: { createdAt: true, updatedAt: true } },
       },
       orderBy: { updatedAt: "desc" },
       take: 100,

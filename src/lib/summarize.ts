@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { chat } from "@/lib/deepseek";
 import { logPipelineRun, completePipelineRun } from "@/lib/pipeline-log";
+import { events } from "@/lib/events";
 
 const SYSTEM_PROMPT = (
   ticker: string
@@ -229,6 +230,8 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
       },
     });
 
+    events.emit("stock:summarized", { ticker });
+
     if (runId) {
       await completePipelineRun(runId, {
         status: "completed",
@@ -257,12 +260,16 @@ export function needsSummary(stock: {
   lastSummaryAt: Date | null;
   files: { createdAt: Date }[];
   notes: { createdAt: Date }[];
-  claims: { createdAt: Date }[];
+  claims: { createdAt: Date; updatedAt: Date }[];
 }): boolean {
   if (!stock.lastSummaryAt) return true;
   return (
     stock.files.some((f) => new Date(f.createdAt) > new Date(stock.lastSummaryAt!)) ||
     stock.notes.some((e) => new Date(e.createdAt) > new Date(stock.lastSummaryAt!)) ||
-    stock.claims.some((c) => new Date(c.createdAt) > new Date(stock.lastSummaryAt!))
+    stock.claims.some(
+      (c) =>
+        new Date(c.createdAt) > new Date(stock.lastSummaryAt!) ||
+        new Date(c.updatedAt) > new Date(stock.lastSummaryAt!)
+    )
   );
 }

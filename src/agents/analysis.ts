@@ -25,7 +25,7 @@ async function run(input?: AgentInput): Promise<AgentResult> {
       lastSummaryAt: true,
       files: { select: { createdAt: true } },
       notes: { select: { createdAt: true } },
-      claims: { select: { createdAt: true } },
+      claims: { select: { createdAt: true, updatedAt: true } },
     },
     orderBy: { updatedAt: "desc" },
     take: 100,

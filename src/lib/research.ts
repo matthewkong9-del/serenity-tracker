@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { chat, chatJson } from "@/lib/deepseek";
 import { braveSearch } from "@/lib/brave";
 import { logPipelineRun } from "@/lib/pipeline-log";
+import { events } from "@/lib/events";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -316,6 +317,15 @@ export async function researchClaim(
         evidence: evidenceText.trim(),
       },
     });
+
+    // Touch the stock's updatedAt so needsSummary() picks it up in the
+    // orchestrator path. Also emit claim:researched so the event-driven
+    // path triggers immediate re-summarization (debounced).
+    await prisma.stock.update({
+      where: { id: claim.stockId },
+      data: { updatedAt: new Date() },
+    });
+    events.emit("claim:researched", { ticker, claimId, newStatus });
 
     await logPipelineRun({
       stage: "research",
