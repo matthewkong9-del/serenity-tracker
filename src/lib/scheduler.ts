@@ -99,6 +99,13 @@ async function tick(): Promise<void> {
       const cl = await getAgent("cleanup")?.run();
       console.log(`[scheduler] 🧹 cleanup: ${cl?.message || "triggered"}`);
     }
+
+    // ── 7. Decision: daily at 4 AM UTC (deep thesis generation) ──
+    if (isHourWindow(4, "decision")) {
+      lastRun.decision = Date.now();
+      const dc = await getAgent("decision")?.run();
+      console.log(`[scheduler] 🧠 decision: ${dc?.message || "triggered"}`);
+    }
   } catch (e: any) {
     console.error(`[scheduler] tick crashed: ${e.message}`);
   } finally {
@@ -116,7 +123,7 @@ export function startScheduler(): void {
     `[scheduler] starting — tick every ${TICK_INTERVAL_MS / 1000}s`
   );
   console.log(
-    `[scheduler] schedule: watchdog+ops(5m) ingest(1h) price(2AM) auditor+editor(3AM) cleanup(Sun 4AM)`
+    `[scheduler] schedule: watchdog+ops(5m) ingest(1h) price(2AM) auditor+editor(3AM) decision(4AM) cleanup(Sun 4AM)`
   );
 
   // Run one tick immediately, then every TICK_INTERVAL_MS

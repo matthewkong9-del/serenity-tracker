@@ -15,6 +15,7 @@ import "./research";
 import "./analysis";
 import "./scoring";
 import "./orchestrator";
+import "./decision";
 
 export { registerAgent, getAgent, getAllAgents } from "./registry";
 export type { Agent, AgentInput, AgentResult } from "./types";

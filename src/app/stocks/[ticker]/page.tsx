@@ -11,6 +11,7 @@ import EvidenceCards from "./knowledge-base/EvidenceCards";
 import Changelog from "./knowledge-base/Changelog";
 import AnnotationsPanel from "./knowledge-base/AnnotationsPanel";
 import PeerComparison from "./knowledge-base/PeerComparison";
+import DecisionCard from "./knowledge-base/DecisionCard";
 
 // ── Types ──
 
@@ -34,6 +35,7 @@ interface StockData {
   files: { id: number; originalName: string; fileType: string; createdAt: string }[];
   notes: { id: number; title: string | null; content: string; tag: string | null; createdAt: string }[];
   claims: { id: number; text: string; status: string; evidence: string | null; researchStatus: string; createdAt: string }[];
+  decision?: { maturity: string; action: string | null; reasoning: string | null } | null;
   _count?: { files: number; notes: number; claims: number };
 }
 
@@ -212,6 +214,13 @@ export default function StockKBPage() {
             claimCounts={stock.claimCounts}
             summary={stock.summary}
           />
+        </div>
+      )}
+
+      {/* ── Investment Thesis (Decision Agent) ── */}
+      {stock.decision && (
+        <div className="mb-6">
+          <DecisionCard decision={stock.decision} />
         </div>
       )}
 

@@ -26,6 +26,7 @@ export type PipelineStage =
   | "ops"           // auto-fix infrastructure issues
   | "auditor"       // content quality scan
   | "editor"        // auto-fix content issues
+  | "decision"      // investment thesis generation
 
 export type RunStatus = "started" | "completed" | "failed" | "skipped";
 

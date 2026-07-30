@@ -36,6 +36,7 @@ export const lastRun: Record<string, number> = {
   auditor: 0,
   editor: 0,
   cleanup: 0,
+  decision: 0,
 };
 
 // ── Schedule helpers ───────────────────────────────────────────────────

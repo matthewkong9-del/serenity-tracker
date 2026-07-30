@@ -9,6 +9,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ticker: str
       notes: { orderBy: { createdAt: "desc" } },
       claims: { orderBy: { createdAt: "desc" } },
       relationships: { orderBy: { createdAt: "desc" } },
+      decision: true,
     },
   });
 
