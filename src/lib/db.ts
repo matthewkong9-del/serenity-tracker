@@ -4,15 +4,13 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 export const prisma = globalForPrisma.prisma || new PrismaClient();
 
-// Enable WAL mode on a fresh client (persists in the DB file header) so
-// concurrent reads from API routes don't block the scheduler's writes.
-// Best-effort: ignore if the driver rejects the PRAGMA.
-if (!globalForPrisma.prisma) {
-  void prisma.$queryRawUnsafe("PRAGMA journal_mode=WAL").catch(() => {});
-  void prisma.$queryRawUnsafe("PRAGMA synchronous=NORMAL").catch(() => {});
-}
-
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+
+// NOTE: do NOT call any prisma method at module top level here. This module is
+// imported by client components (for parseStance/timeAgo), so anything that
+// runs at load time — including PRAGMAs — gets bundled into the browser and
+// throws (no SQLite in the browser). DB init like WAL mode lives in
+// instrumentation.ts, which is server-only.
 
 export type Stance = "Bullish" | "Bearish" | "Neutral" | null;
 

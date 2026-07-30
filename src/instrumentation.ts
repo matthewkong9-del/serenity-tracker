@@ -11,6 +11,13 @@ export async function register() {
   // Only runs in production (Next.js skips register() in dev mode).
   // Wrap in try/catch so a scheduler failure doesn't crash the web server.
   try {
+    // Enable WAL mode (persists in the DB file header) so concurrent reads
+    // from API routes don't block the scheduler's writes. Must run server-side
+    // only — see the note in src/lib/db.ts.
+    const { prisma } = await import("@/lib/db");
+    await prisma.$queryRawUnsafe("PRAGMA journal_mode=WAL").catch(() => {});
+    await prisma.$queryRawUnsafe("PRAGMA synchronous=NORMAL").catch(() => {});
+
     const { startScheduler } = await import("@/lib/scheduler");
     await startScheduler();
     console.log("[instrumentation] scheduler started successfully");
