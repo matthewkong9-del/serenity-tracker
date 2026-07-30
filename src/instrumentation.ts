@@ -12,7 +12,7 @@ export async function register() {
   // Wrap in try/catch so a scheduler failure doesn't crash the web server.
   try {
     const { startScheduler } = await import("@/lib/scheduler");
-    startScheduler();
+    await startScheduler();
     console.log("[instrumentation] scheduler started successfully");
   } catch (e) {
     console.error("[instrumentation] failed to start scheduler:", e);

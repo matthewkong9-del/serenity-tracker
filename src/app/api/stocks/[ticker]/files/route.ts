@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { runExtractions } from "@/lib/relationships";
+import { enqueueTask } from "@/lib/pending-tasks";
 import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { exec } from "child_process";
@@ -69,10 +69,12 @@ export async function POST(req: NextRequest, { params }: { params: { ticker: str
     },
   });
 
-  // Re-extract relationships and contrarian angles now that new evidence arrived
+  // New evidence → queue a re-summarization. The summarize→extract chain
+  // (ADR-0001) refreshes both the summary and the relationship map via the
+  // task queue, so this never calls the LLM directly from the request handler.
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (apiKey) {
-    runExtractions(ticker, apiKey);
+    await enqueueTask({ kind: "summarize", ticker });
   }
 
   return NextResponse.json(saved, { status: 201 });

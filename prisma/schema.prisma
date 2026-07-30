@@ -22,6 +22,9 @@ model Stock {
   currency        String?  // "USD", "KRW", "EUR", "CNY", "CAD", "TWD", "JPY", "HKD" etc. null = USD
   priceUsd        Float?   // USD-normalized price for cross-stock comparison (computed during refresh)
   pbRatio         Float?
+  peRatio         Float?
+  week52High      Float?
+  week52Low       Float?
   marketCap       Float?    // market capitalization (from Finnhub, in millions USD)
   lastPriceUpdated DateTime?
   createdAt       DateTime @default(now())
@@ -82,6 +85,7 @@ model Claim {
   source    String?
   status     String   @default("unverified")
   evidence   String?
+  humanNote  String?  // human observations; does not affect AI-owned status
   extractionConfidence Int? @map("confidence") // 1-5 LLM self-rating during extraction (null = not rated)
   impactScore    Int?    // 1-5: chokepoint relevance — how important is this claim?
   insightType    String? // "chokepoint" | "dependency" | "pricing_power" | "moat_signal" | "risk_factor" | "general"
@@ -187,3 +191,28 @@ model Annotation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// Persisted work queue — the single reactivity plane (ADR-0001).
+// The orchestrator's 30s tick drains due rows; retries are bounded by `attempts`.
+model PendingTask {
+  id        Int      @id @default(autoincrement())
+  kind      String   // "research" | "summarize" | "extract" | "narrative"
+  ticker    String?
+  claimId   Int?
+  status    String   @default("pending") // "pending" | "claimed" | "done" | "dead"
+  attempts  Int      @default(0)
+  dueAt     DateTime @default(now())
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind, status, dueAt])
+  @@index([ticker])
+}
+
+// Persists per-job last-run timestamps so daily jobs survive process restarts.
+model ScheduleState {
+  key       String   @id // "price" | "auditor" | "editor" | "cleanup" | "decision" | "watchdogDeep" | "ops" | "ingest" | "staleResearch"
+  lastRunAt DateTime
+}
+

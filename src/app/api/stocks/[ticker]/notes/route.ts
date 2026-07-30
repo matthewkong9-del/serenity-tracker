@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { enqueueTask } from "@/lib/pending-tasks";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(_req: NextRequest, { params }: { params: { ticker: string } }) {
@@ -30,6 +31,12 @@ export async function POST(req: NextRequest, { params }: { params: { ticker: str
       tag: tag?.trim() || null,
     },
   });
+
+  // New note is summary context → queue a re-summarization (ADR-0001).
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (apiKey) {
+    await enqueueTask({ kind: "summarize", ticker });
+  }
 
   return NextResponse.json(entry, { status: 201 });
 }

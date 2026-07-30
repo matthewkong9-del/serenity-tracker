@@ -10,14 +10,13 @@ interface Claim {
   source: string | null;
   status: string;
   evidence: string | null;
+  humanNote: string | null;
   tweetId: number | null;
   createdAt: string;
   updatedAt: string;
   stock: { ticker: string; name: string | null };
   tweet: { id: number; content: string; timestamp: string | null } | null;
 }
-
-const CLAIM_STATUSES = ["unverified", "supported", "refuted", "disputed"] as const;
 
 const CLAIM_COLORS: Record<string, string> = {
   unverified: "text-yellow-400 border-yellow-400/30 bg-yellow-400/10",
@@ -57,7 +56,7 @@ export default function ClaimsContent() {
   const [error, setError] = useState("");
 
   const [editingClaimId, setEditingClaimId] = useState<number | null>(null);
-  const [editEvidence, setEditEvidence] = useState("");
+  const [editNote, setEditNote] = useState("");
   const [expandedTweets, setExpandedTweets] = useState<Set<number>>(new Set());
   const [verifyingClaimId, setVerifyingClaimId] = useState<number | null>(null);
 
@@ -91,30 +90,19 @@ export default function ClaimsContent() {
     load();
   }, [load]);
 
-  async function cycleClaimStatus(claim: Claim) {
-    const idx = CLAIM_STATUSES.indexOf(claim.status as any);
-    const next = CLAIM_STATUSES[(idx + 1) % CLAIM_STATUSES.length];
-    await fetch(`/api/stocks/${claim.stock.ticker}/claims/${claim.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    });
-    load();
-  }
-
   function startEditClaim(claim: Claim) {
     setEditingClaimId(claim.id);
-    setEditEvidence(claim.evidence || "");
+    setEditNote(claim.humanNote || "");
   }
 
-  async function saveClaimEvidence(ticker: string, claimId: number) {
+  async function saveClaimNote(ticker: string, claimId: number) {
     await fetch(`/api/stocks/${ticker}/claims/${claimId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ evidence: editEvidence }),
+      body: JSON.stringify({ humanNote: editNote }),
     });
     setEditingClaimId(null);
-    setEditEvidence("");
+    setEditNote("");
     load();
   }
 
@@ -259,15 +247,14 @@ export default function ClaimsContent() {
           {claims.map((claim) => (
             <div key={claim.id} className="bg-surface border border-border rounded-xl p-4">
               <div className="flex items-start gap-3">
-                <button
-                  onClick={() => cycleClaimStatus(claim)}
-                  className={`text-xs border rounded-full px-2.5 py-1 whitespace-nowrap mt-0.5 transition hover:opacity-80 ${
+                <span
+                  className={`text-xs border rounded-full px-2.5 py-1 whitespace-nowrap mt-0.5 ${
                     CLAIM_COLORS[claim.status]
                   }`}
-                  title="Click to cycle: unverified → supported → refuted → disputed"
+                  title="AI verdict — set by the research pipeline"
                 >
                   {claim.status}
-                </button>
+                </span>
                 {"confidence" in claim &&
                   (claim as any).extractionConfidence != null &&
                   (claim as any).extractionConfidence <= 2 && (
@@ -336,18 +323,27 @@ export default function ClaimsContent() {
                     </div>
                   )}
 
+                  {claim.evidence && (
+                    <div className="mt-2">
+                      <p className="text-fg/70 text-xs whitespace-pre-wrap bg-bg rounded-lg p-3 border border-border">
+                        <span className="text-muted/70">AI evidence · </span>
+                        {claim.evidence}
+                      </p>
+                    </div>
+                  )}
+
                   {editingClaimId === claim.id ? (
                     <div className="mt-3 space-y-3">
                       <textarea
-                        value={editEvidence}
-                        onChange={(e) => setEditEvidence(e.target.value)}
-                        placeholder="Paste links, notes, or data that supports or refutes this claim..."
+                        value={editNote}
+                        onChange={(e) => setEditNote(e.target.value)}
+                        placeholder="Your observations on this claim..."
                         rows={3}
                         className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-fg text-sm resize-none"
                       />
                       <div className="flex gap-2">
                         <button
-                          onClick={() => saveClaimEvidence(claim.stock.ticker, claim.id)}
+                          onClick={() => saveClaimNote(claim.stock.ticker, claim.id)}
                           className="bg-accent text-bg px-3 py-1.5 rounded text-xs font-medium"
                         >
                           Save
@@ -360,16 +356,17 @@ export default function ClaimsContent() {
                         </button>
                       </div>
                     </div>
-                  ) : claim.evidence ? (
+                  ) : claim.humanNote ? (
                     <div className="mt-2">
                       <p className="text-fg/70 text-xs whitespace-pre-wrap bg-bg rounded-lg p-3 border border-border">
-                        {claim.evidence}
+                        <span className="text-muted/70">Your note · </span>
+                        {claim.humanNote}
                       </p>
                       <button
                         onClick={() => startEditClaim(claim)}
                         className="text-muted hover:text-fg text-xs mt-1 transition"
                       >
-                        Edit evidence
+                        Edit note
                       </button>
                     </div>
                   ) : (
@@ -377,7 +374,7 @@ export default function ClaimsContent() {
                       onClick={() => startEditClaim(claim)}
                       className="text-muted hover:text-fg text-xs mt-2 transition"
                     >
-                      + Add evidence
+                      + Add note
                     </button>
                   )}
                   <button

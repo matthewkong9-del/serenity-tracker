@@ -16,6 +16,10 @@ interface ProviderConfig {
   defaultModel: string;
   /** Env var that holds the API key for this provider. */
   apiKeyEnv: string;
+  /** USD per 1M input tokens. */
+  inputPerMTok: number;
+  /** USD per 1M output tokens. */
+  outputPerMTok: number;
 }
 
 const PROVIDERS: Record<string, ProviderConfig> = {
@@ -24,12 +28,17 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     endpoint: "https://api.deepseek.com/chat/completions",
     defaultModel: "deepseek-v4-pro",
     apiKeyEnv: "DEEPSEEK_API_KEY",
+    inputPerMTok: 0.27,
+    outputPerMTok: 1.10,
   },
   zai: {
     label: "Z.AI",
     endpoint: "https://api.z.ai/api/paas/v4/chat/completions",
     defaultModel: "glm-5.2",
     apiKeyEnv: "ZAI_API_KEY",
+    // Approximate GLM pricing — verify against Z.AI's current rate card.
+    inputPerMTok: 0.6,
+    outputPerMTok: 2.2,
   },
 };
 
@@ -56,29 +65,29 @@ function resolveApiKey(passedKey: string, provider: ProviderConfig): string {
 // Cost tracking
 // ---------------------------------------------------------------------------
 
-// Rough estimate: ~4 chars = 1 token for English text.
-// DeepSeek pricing per 1M tokens: $0.27 input, $1.10 output.
-const COST_PER_INPUT_CHAR = 0.27 / 1_000_000 / 4;
-const COST_PER_OUTPUT_CHAR = 1.10 / 1_000_000 / 4;
+// ~4 chars ≈ 1 token — fallback when the API omits a usage block.
+const CHARS_PER_TOKEN = 4;
 
 async function logCall(
   purpose: string,
   model: string,
-  inputChars: number,
-  outputChars: number,
-  source: string
+  inputTokens: number,
+  outputTokens: number,
+  provider: ProviderConfig
 ) {
   try {
     const { prisma } = await import("@/lib/db");
     const cost =
-      inputChars * COST_PER_INPUT_CHAR + outputChars * COST_PER_OUTPUT_CHAR;
+      (inputTokens * provider.inputPerMTok +
+        outputTokens * provider.outputPerMTok) /
+      1_000_000;
     await prisma.apiCallLog.create({
       data: {
-        source,
+        source: provider.label,
         purpose,
         model,
-        inputChars,
-        outputChars,
+        inputChars: inputTokens, // now token counts (field reused)
+        outputChars: outputTokens,
         estimatedCost: Math.round(cost * 1_000_000) / 1_000_000, // 6 decimal places
       },
     });
@@ -130,11 +139,18 @@ export async function chat(
 
   const output = data.choices[0].message.content as string;
 
-  // Log cost in background (never blocks the caller)
+  // Log cost in background (never blocks the caller). Prefer the API's real
+  // token usage; fall back to a char-based estimate when it's absent.
   if (options?.purpose) {
-    const inputChars = messages.reduce((sum, m) => sum + m.content.length, 0);
-    const outputChars = output.length;
-    void logCall(options.purpose, model, inputChars, outputChars, provider.label);
+    const usage = data.usage;
+    const inputTokens =
+      usage?.prompt_tokens ??
+      Math.ceil(
+        messages.reduce((sum, m) => sum + m.content.length, 0) / CHARS_PER_TOKEN
+      );
+    const outputTokens =
+      usage?.completion_tokens ?? Math.ceil(output.length / CHARS_PER_TOKEN);
+    void logCall(options.purpose, model, inputTokens, outputTokens, provider);
   }
 
   return output;

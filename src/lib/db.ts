@@ -4,6 +4,14 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 export const prisma = globalForPrisma.prisma || new PrismaClient();
 
+// Enable WAL mode on a fresh client (persists in the DB file header) so
+// concurrent reads from API routes don't block the scheduler's writes.
+// Best-effort: ignore if the driver rejects the PRAGMA.
+if (!globalForPrisma.prisma) {
+  void prisma.$queryRawUnsafe("PRAGMA journal_mode=WAL").catch(() => {});
+  void prisma.$queryRawUnsafe("PRAGMA synchronous=NORMAL").catch(() => {});
+}
+
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 export type Stance = "Bullish" | "Bearish" | "Neutral" | null;

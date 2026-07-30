@@ -16,6 +16,12 @@ import { generateNarrative } from "@/lib/narrative";
 import { runExtractions } from "@/lib/relationships";
 import { checkForOrders, parseResearchCommand, sendMessage } from "@/lib/telegram";
 import { logPipelineRun } from "@/lib/pipeline-log";
+import {
+  drainPendingTasks,
+  enqueueTask,
+  hasPendingTask,
+  type TaskHandlers,
+} from "@/lib/pending-tasks";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -25,37 +31,64 @@ export interface OrchestratorTickResult {
   actions: string[];
 }
 
-// ── In-memory tracking ────────────────────────────────────────────────
+// ── Schedule state (persisted via ScheduleState, survives restarts) ────────
 
-/** Last-run timestamps for periodic agents. Shared with scheduler.ts. */
-export const lastRun: Record<string, number> = {
-  watchdogDeep: 0,
-  ops: 0,
-  ingest: 0,
-  price: 0,
-  auditor: 0,
-  editor: 0,
-  cleanup: 0,
-  decision: 0,
-};
+/** In-memory cache of last-run timestamps, loaded from ScheduleState on boot.
+ *  Persisted so a restart inside a job's hour window can't fire it twice. */
+let scheduleCache = new Map<string, number>();
+
+/** Load persisted last-run timestamps. Called once by startScheduler(). */
+export async function initSchedule(): Promise<void> {
+  const rows = await prisma.scheduleState.findMany();
+  scheduleCache = new Map(rows.map((r) => [r.key, r.lastRunAt.getTime()]));
+}
+
+/** Record that a scheduled job just ran — updates cache + persists. */
+export async function markRun(key: string): Promise<void> {
+  const now = Date.now();
+  scheduleCache.set(key, now);
+  try {
+    await prisma.scheduleState.upsert({
+      where: { key },
+      create: { key, lastRunAt: new Date(now) },
+      update: { lastRunAt: new Date(now) },
+    });
+  } catch {
+    // best-effort — a failed persist must not break the tick
+  }
+}
 
 // ── Schedule helpers ───────────────────────────────────────────────────
 
 export function shouldRun(key: string, intervalMs: number): boolean {
-  return Date.now() - lastRun[key] >= intervalMs;
+  return Date.now() - (scheduleCache.get(key) ?? 0) >= intervalMs;
 }
 
 export function isHourWindow(hour: number, key: string): boolean {
   const now = new Date();
-  return (
-    now.getUTCHours() === hour &&
-    shouldRun(key, 23 * 60 * 60 * 1000)
-  );
+  return now.getUTCHours() === hour && shouldRun(key, 23 * 60 * 60 * 1000);
 }
 
 export function isSunday(): boolean {
   return new Date().getUTCDay() === 0;
 }
+
+// ── Task handlers for the drain (injected into drainPendingTasks) ──────────
+
+const taskHandlers: TaskHandlers = {
+  research: async (claimId, ticker, apiKey) => {
+    await researchClaim(claimId, ticker, apiKey, "quick");
+  },
+  summarize: async (ticker, apiKey) => {
+    await summarizeStock(ticker, apiKey);
+  },
+  extract: async (ticker, apiKey) => {
+    await runExtractions(ticker, apiKey);
+  },
+  narrative: async (ticker, apiKey) => {
+    await generateNarrative(ticker, apiKey);
+  },
+};
 
 // ── Core orchestration tick ────────────────────────────────────────────
 
@@ -198,93 +231,90 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
     }
   }
 
-  // ── 2. Auto-research pending claims ──
-  // When Telegram IS configured: only auto-research low-impact claims
-  // (score ≤ 3 or null). High-impact claims (score ≥ 4) are escalated
-  // to Telegram for human review — don't touch them here.
-  // When Telegram is NOT configured: auto-research everything.
-  const researchFilter: any = {
-    researchStatus: { in: ["pending", "failed"] },
-  };
-
-  if (telegramConfigured) {
-    // Exclude high-impact claims — those wait for human Telegram review
-    researchFilter.OR = [
-      { impactScore: { lte: 3 } },
-      { impactScore: null },
-    ];
-  }
-
+  // ── 2. Catch-up + drain the persisted task queue ────────────────────
+  // Reactivity is event-driven (enqueueTask); this is the safety net that
+  // also recovers work events can't see (a file uploaded directly) or that
+  // was lost to a restart. The drain's atomic claim guarantees no two ticks
+  // run the same stock's work at once — this stops the concurrent
+  // summarize/relationship collisions that caused the watchdog→ops timeout
+  // loop. (ADR-0001)
   if (!workDone) {
-    const pendingCount = await prisma.claim.count({ where: researchFilter });
-
-    if (pendingCount > 0) {
-      const claims = await prisma.claim.findMany({
-        where: researchFilter,
-        include: { stock: { select: { ticker: true } } },
-        orderBy: { createdAt: "asc" },
-        take: 3,
-      });
-
-      for (const c of claims) {
-        try {
-          await researchClaim(c.id, c.stock.ticker, apiKey, "quick");
-          actions.push(`Research: claim #${c.id} (${c.stock.ticker})`);
-          workDone = true;
-        } catch (e: any) {
-          console.error(
-            `[orchestrator] research claim #${c.id} failed: ${e.message}`
-          );
-        }
-      }
+    // 2a. Enqueue research for pending claims (safety net — sync already
+    // enqueues for newly-extracted claims). Low-impact auto-researches;
+    // high-impact waits for Telegram review when configured. Dedup in
+    // enqueueTask means re-enqueuing an already-pending task is a no-op.
+    const researchWhere: { researchStatus: { in: string[] }; OR?: any[] } = {
+      researchStatus: { in: ["pending", "failed"] },
+    };
+    if (telegramConfigured) {
+      researchWhere.OR = [{ impactScore: { lte: 3 } }, { impactScore: null }];
     }
-  }
+    const pendingResearch = await prisma.claim.findMany({
+      where: researchWhere,
+      select: { id: true, stock: { select: { ticker: true } } },
+      orderBy: { createdAt: "asc" },
+      take: 5,
+    });
+    for (const c of pendingResearch) {
+      await enqueueTask({ kind: "research", claimId: c.id, ticker: c.stock.ticker });
+    }
 
-  // ── 3. Summarize stocks with new data ────────────────────────────────
-  if (!workDone) {
+    // 2b. Enqueue summarize for stocks with new content but no pending task.
     const stocksToCheck = await prisma.stock.findMany({
       select: {
         ticker: true,
         lastSummaryAt: true,
-        files: { select: { createdAt: true } },
+        files: { select: { createdAt: true, markdown: true } },
         notes: { select: { createdAt: true } },
         claims: { select: { createdAt: true, updatedAt: true } },
       },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { lastSummaryAt: "asc" },
       take: 100,
     });
 
-    // Filter to stocks that need summarization AND have content to summarize
     const stale = stocksToCheck.filter((s) => needsSummary(s));
+    // Only enqueue if there's indexable content: claims, notes, or a file
+    // that was converted to markdown (matches summarizeStock's buildContext,
+    // which ignores files whose markdown is null).
     const actionable = stale.filter(
-      (s) => s.files.length > 0 || s.notes?.length > 0 || s.claims.length > 0
+      (s) =>
+        s.claims.length > 0 ||
+        s.notes.length > 0 ||
+        s.files.some((f) => f.markdown)
     );
-    if (actionable.length > 0) {
-      const s = actionable[0];
-      try {
-        await summarizeStock(s.ticker, apiKey);
-        actions.push(`Summary: $${s.ticker}`);
-        workDone = true;
 
-        void runExtractions(s.ticker, apiKey).catch((e) =>
-          console.error(
-            `[orchestrator] relationships for ${s.ticker} failed: ${e.message}`
-          )
-        );
-        void generateNarrative(s.ticker, apiKey).catch((e) =>
-          console.error(
-            `[orchestrator] narrative for ${s.ticker} failed: ${e.message}`
-          )
-        );
-      } catch (e: any) {
-        if (
-          e.message !== "No content to summarize. Add tweets, files, or notes first."
-        ) {
-          console.error(
-            `[orchestrator] summarize ${s.ticker} failed: ${e.message}`
-          );
-        }
+    let enqueued = 0;
+    for (const s of actionable.slice(0, 3)) {
+      if (!(await hasPendingTask("summarize", s.ticker))) {
+        await enqueueTask({ kind: "summarize", ticker: s.ticker });
+        actions.push(`Queued summary: $${s.ticker}`);
+        enqueued++;
       }
+    }
+
+    // 2b. Drain due research/summarize/extract/narrative tasks.
+    const drained = await drainPendingTasks(apiKey, taskHandlers, 5);
+    actions.push(...drained.actions);
+    if (enqueued > 0 || drained.ran > 0) workDone = true;
+  }
+
+  // ── 3. Stale-research refresh (daily at 5 AM UTC) ───────────────────
+  // Re-queue claims whose verdicts have gone stale so the AI's authoritative
+  // status stays current. Capped (20/day) + impact-prioritized.
+  if (isHourWindow(5, "staleResearch")) {
+    await markRun("staleResearch");
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const staleClaims = await prisma.claim.findMany({
+      where: { researchStatus: "done", researchedAt: { lt: cutoff } },
+      select: { id: true, stock: { select: { ticker: true } } },
+      orderBy: { impactScore: "desc" },
+      take: 20,
+    });
+    for (const c of staleClaims) {
+      await enqueueTask({ kind: "research", claimId: c.id, ticker: c.stock.ticker });
+    }
+    if (staleClaims.length > 0) {
+      actions.push(`Stale research: queued ${staleClaims.length}`);
     }
   }
 

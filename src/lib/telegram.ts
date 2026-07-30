@@ -145,6 +145,9 @@ export async function notify(message: string): Promise<number | null> {
 // ── Receiving orders ──
 
 let lastUpdateId = 0;
+/** When set, polling is paused until this timestamp (ms). Used to back off
+ *  on a 409 Conflict — another process is polling this same bot token. */
+let pollBackoffUntil = 0;
 
 export interface TelegramCommand {
   command: string;
@@ -158,6 +161,9 @@ export async function checkForOrders(): Promise<TelegramCommand[]> {
   const t = token();
   if (!t) return [];
 
+  // Back off if we recently hit a 409 (another poller on this bot token).
+  if (Date.now() < pollBackoffUntil) return [];
+
   try {
     const res = await fetch(
       `${API}/bot${t}/getUpdates?offset=${lastUpdateId + 1}&timeout=5`,
@@ -165,7 +171,23 @@ export async function checkForOrders(): Promise<TelegramCommand[]> {
     );
 
     if (!res.ok) {
-      console.error(`[telegram] poll failed: ${await res.text()}`);
+      const body = await res.text();
+      // 409 Conflict = another process is polling this bot (e.g. an external
+      // tweet-collector). Don't spam the log every tick — back off 5 minutes.
+      let errorCode = 0;
+      try {
+        errorCode = JSON.parse(body).error_code;
+      } catch {
+        /* not JSON */
+      }
+      if (errorCode === 409) {
+        pollBackoffUntil = Date.now() + 5 * 60 * 1000;
+        console.warn(
+          "[telegram] 409 conflict — another bot poller is active; backing off 5 min"
+        );
+      } else {
+        console.error(`[telegram] poll failed: ${body}`);
+      }
       return [];
     }
 

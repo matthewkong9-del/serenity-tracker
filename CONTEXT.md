@@ -17,16 +17,29 @@ A user-uploaded document attached to a Stock. Auto-converted to Markdown on uplo
 A post by Serenity, synced from a Google Sheets CSV. Deduplicated by **contentHash** (SHA-256, first 16 chars). Each Tweet may yield multiple **claims** and **concepts** via AI extraction.
 
 ### Claim
-A specific, falsifiable statement extracted from a Tweet by the AI. Each Claim belongs to one Stock and optionally one Tweet. A Claim moves through a **status** lifecycle and carries AI **extractionConfidence** (how sure the AI is that it extracted the claim correctly).
+A specific, falsifiable statement extracted from a Tweet by the AI. Each Claim belongs to one Stock and optionally one Tweet. Carries AI **extractionConfidence** (how sure the AI is that it extracted the claim correctly).
 
-**Status lifecycle:** `unverified` → `supported` | `refuted` | `disputed`
-- `unverified` — not yet checked against evidence (default)
-- `supported` — evidence confirms the claim
-- `refuted` — evidence contradicts the claim
-- `disputed` — evidence is mixed or sources disagree
+**`status`** — the AI's **authoritative** verdict, set by the research pipeline. Must be evidence-backed: the AI only moves a claim out of `unverified` when research supports it.
+- `unverified` — not yet checked, or evidence was insufficient (default)
+- `supported` — research found evidence confirming the claim
+- `refuted` — research found evidence contradicting the claim
+- `disputed` — sources disagree, evidence is mixed
 
-**Verification verdict** (ephemeral, from AI pipeline): `supported` | `refuted` | `disputed` | `unresolved`
-- `unresolved` — insufficient evidence to reach any verdict. Does NOT overwrite Claim status — the claim stays at its current status. This is a verification-only concept, not a Claim lifecycle state.
+The human does **not** override `status`. The human's input is a **`humanNote`** — free-text observations on the claim. (The one-click status-cycling UI is removed; `status` is AI-owned.) When a claim is re-researched, the AI's new verdict overwrites the old `status`.
+
+**`researchStatus`** — pipeline state of the research job: `pending` → `researching` → `done` | `failed`. Independent of `status`.
+**`impactScore`** (1–5) — how chokepoint-relevant the claim is; drives triage routing (low-impact auto-researches, high-impact escalates to Telegram).
+**`insightType`** — taxonomy tag: `chokepoint` | `dependency` | `pricing_power` | `moat_signal` | `risk_factor` | `general`.
+**`humanNote`** — the human's observations on the claim; does not affect `status`. Separate from the AI's `evidence`.
+**`evidence`** — AI-written research output (verdict, sources, reasoning). AI-only.
+**`extractionConfidence`** (1–5) — AI self-rating of how reliably it extracted the claim from the tweet.
+
+**Research freshness:** research must stay current. A claim whose research is stale can be re-queued (`researchStatus` → `pending`) for re-research.
+
+**Verification verdict** (from the research pipeline): `supported` | `refuted` | `disputed` | `unresolved`.
+- `unresolved` — insufficient evidence to reach any verdict; the claim stays `unverified`.
+- The verdict becomes the claim's `status` (except `unresolved`, which leaves `status` unchanged).
+- **verificationConfidence** (`high`/`medium`/`low`) is ephemeral — it lives in the `evidence` text, not a column.
 
 ### Concept
 A technology, supply chain dynamic, market theme, product, or other non-stock idea extracted from Tweets. Examples: "Silicon Photonics," "OSAT consolidation," "AI capex cycle." Connected to Tweets via a many-to-many join (TweetConcept). Categorized: Technology, Supply Chain, Market Theme, Product, Other.
@@ -84,6 +97,29 @@ Cross-stock analysis layer. Includes:
 - **Thesis drift** — whether the original thesis is strengthening, weakening, or holding as claims get verified/refuted
 - **Research plan** — AI-generated prioritization of documents to find, claims to verify, gaps to fill
 
+## Knowledge Base & Autonomous Layer
+
+### Chokepoint Depth
+A 1–5 rating of how essential what a Stock controls is to its supply chain (5 = irreplaceable sole-source, no substitutes; 1 = commodity, easily substituted). Set by the AI during summarization. Drives scoring.
+
+### Narrative
+A conversational, knowledge-base-style story about a Stock, generated from its analytical summary after summarization. Editable on the stock page. Distinct from the `summary` (the structured analyst output).
+
+### Annotation
+A margin note attached to a specific section of a Stock's Narrative (`what` | `chokepoint` | `numbers` | `risk` | `bottom`). Human-authored; does not affect the AI's analysis.
+
+### Scoring
+Live, computed-on-read classification of a Stock into an **OpportunityBucket**: `strong_buy` | `watch` | `pass`. Multi-factor: chokepoint depth × evidence quality × market ignorance × asymmetric bonus × valuation discount. Not persisted — recomputed each read.
+
+### Triage
+Impact-based routing of newly-extracted claims. Low-impact claims (`impactScore` ≤ 3) auto-flow to research; high-impact claims (≥ 4) escalate to Telegram for human review. Telegram is an escalation channel, not a gate.
+
+### Research
+The pipeline that checks a Claim against web sources and sets its `status`. Exa search (primary) → Brave + scrape (fallback) → DeepSeek verdict. **quick** = single pass; **deep** = two adversarial passes (confirm + refute); agreeing verdicts are applied, disagreements marked `disputed`.
+
+### Autonomous Pipeline
+The system runs itself via an in-process scheduler (every 30s) dispatching periodic agents (ingest, research, price, auditor, editor, cleanup, watchdog, ops, decision). Reactivity between agents is event-driven (`claim:researched` → re-summarize), with the scheduler's tick as a catch-up safety net. See ADR-0001.
+
 ## Synonyms & Renamed Terms
 
 | Old term | New term | When changed |
@@ -96,3 +132,5 @@ Cross-stock analysis layer. Includes:
 | confidence (Relationship) | sourceConfidence | 2026-06-30 |
 | "Maturity Ladder" (UI) | "Decisions" | 2026-06-30 |
 | Claim "verified" label | "supported" | 2026-06-30 |
+| manual status-cycling (UI) | removed — human leaves `humanNote` instead | 2026-07-30 |
+| verification verdict "ephemeral, doesn't overwrite status" | verdict is authoritative, becomes `status` | 2026-07-30 |

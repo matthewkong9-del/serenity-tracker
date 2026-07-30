@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { chat } from "@/lib/deepseek";
 import { logPipelineRun, completePipelineRun } from "@/lib/pipeline-log";
-import { events } from "@/lib/events";
+import { enqueueTask } from "@/lib/pending-tasks";
 
 const SYSTEM_PROMPT = (
   ticker: string
@@ -230,7 +230,11 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
       },
     });
 
-    events.emit("stock:summarized", { ticker });
+    // Queue the follow-on chain: re-extract relationships + regenerate the
+    // narrative. Replaces the dead stock:summarized event + the inline calls
+    // that used to live in orchestratorTick (ADR-0001).
+    await enqueueTask({ kind: "extract", ticker });
+    await enqueueTask({ kind: "narrative", ticker });
 
     if (runId) {
       await completePipelineRun(runId, {

@@ -18,7 +18,8 @@ import {
   shouldRun,
   isHourWindow,
   isSunday,
-  lastRun,
+  initSchedule,
+  markRun,
 } from "@/lib/orchestrator";
 import { getAgent } from "@/agents";
 
@@ -57,12 +58,12 @@ async function tick(): Promise<void> {
 
     // ── 2. Watchdog + Ops: scan + fix every 5 min ─────────────────
     if (shouldRun("watchdogDeep", 5 * 60 * 1000)) {
-      lastRun.watchdogDeep = Date.now();
+      await markRun("watchdogDeep");
       const wd = await getAgent("watchdog")?.run();
       const wdIssues = wd?.issues as string[] | undefined;
       if (wdIssues && wdIssues.length > 0) {
         console.log(`[scheduler] 🐕 watchdog: ${wd?.message}`);
-        lastRun.ops = Date.now();
+        await markRun("ops");
         const op = await getAgent("ops")?.run();
         console.log(`[scheduler] 🔧 ops: ${op?.message || "triggered"}`);
       }
@@ -71,38 +72,38 @@ async function tick(): Promise<void> {
     // ── 3. Ingest: hourly tweet sync ──────────────────────────────
     const syncUrl = process.env.SYNC_CSV_URL;
     if (syncUrl && shouldRun("ingest", 60 * 60 * 1000)) {
-      lastRun.ingest = Date.now();
+      await markRun("ingest");
       const ing = await getAgent("ingest")?.run();
       console.log(`[scheduler] 📥 ingest: ${ing?.message || "triggered"}`);
     }
 
     // ── 4. Price refresh: daily at 2 AM UTC ───────────────────────
     if (isHourWindow(2, "price")) {
-      lastRun.price = Date.now();
+      await markRun("price");
       const pr = await getAgent("price")?.run();
       console.log(`[scheduler] 💹 price: ${pr?.message || "triggered"}`);
     }
 
     // ── 5. Auditor + Editor: scan + fix daily at 3 AM UTC ─────────
     if (isHourWindow(3, "auditor")) {
-      lastRun.auditor = Date.now();
+      await markRun("auditor");
       const au = await getAgent("auditor")?.run();
       console.log(`[scheduler] 🔍 auditor: ${au?.message || "triggered"}`);
-      lastRun.editor = Date.now();
+      await markRun("editor");
       const ed = await getAgent("editor")?.run();
       console.log(`[scheduler] ✏️ editor: ${ed?.message || "triggered"}`);
     }
 
     // ── 6. Cleanup: weekly Sunday at 4 AM UTC ─────────────────────
     if (isHourWindow(4, "cleanup") && isSunday()) {
-      lastRun.cleanup = Date.now();
+      await markRun("cleanup");
       const cl = await getAgent("cleanup")?.run();
       console.log(`[scheduler] 🧹 cleanup: ${cl?.message || "triggered"}`);
     }
 
     // ── 7. Decision: daily at 4 AM UTC (deep thesis generation) ──
     if (isHourWindow(4, "decision")) {
-      lastRun.decision = Date.now();
+      await markRun("decision");
       const dc = await getAgent("decision")?.run();
       console.log(`[scheduler] 🧠 decision: ${dc?.message || "triggered"}`);
     }
@@ -116,8 +117,12 @@ async function tick(): Promise<void> {
 // ── Public API ─────────────────────────────────────────────────────────
 
 /** Start the in-process scheduler. Called by instrumentation.ts on server boot. */
-export function startScheduler(): void {
+export async function startScheduler(): Promise<void> {
   if (__s.intervalId) return; // already running
+
+  // Load persisted last-run timestamps so daily jobs don't double-run after
+  // a restart inside their hour window.
+  await initSchedule();
 
   console.log(
     `[scheduler] starting — tick every ${TICK_INTERVAL_MS / 1000}s`

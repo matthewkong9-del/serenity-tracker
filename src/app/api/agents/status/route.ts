@@ -185,7 +185,7 @@ export async function GET() {
   const now = new Date();
   const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  const [errors24h, costs24h, pendingClaims, lastOrchTick] = await Promise.all([
+  const [errors24h, costs24h, pendingClaims, lastOrchTick, deadTasks, deadClaimsCount] = await Promise.all([
     prisma.pipelineRun.count({
       where: { status: "failed", startedAt: { gte: twentyFourHoursAgo }, ...NOT_AUTO_CLEARED },
     }),
@@ -199,6 +199,22 @@ export async function GET() {
       orderBy: { startedAt: "desc" },
       select: { startedAt: true, decision: true },
     }),
+    // Dead-letter surfacing (ADR-0001): tasks that exhausted retries.
+    prisma.pendingTask.findMany({
+      where: { status: "dead" },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        kind: true,
+        ticker: true,
+        claimId: true,
+        attempts: true,
+        lastError: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.claim.count({ where: { researchStatus: "dead" } }),
   ]);
 
   // Agent cards
@@ -254,17 +270,20 @@ export async function GET() {
   const totalErrors24h = errors24h;
   let health: "healthy" | "warning" | "critical" = "healthy";
   if (totalErrors24h > 10) health = "critical";
-  else if (totalErrors24h > 3) health = "warning";
+  else if (totalErrors24h > 3 || deadTasks.length > 0) health = "warning";
 
   return NextResponse.json({
     health,
     agents,
     watchdogAlerts,
     recentActivity,
+    deadTasks,
     summary: {
       totalErrors24h,
       cost24h: costs24h._sum.estimatedCost || 0,
       pendingClaims,
+      deadTasks: deadTasks.length,
+      deadClaims: deadClaimsCount,
       lastOrchTick: lastOrchTick?.startedAt || null,
       lastOrchDecision: lastOrchTick?.decision || null,
     },

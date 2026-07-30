@@ -12,6 +12,7 @@ interface TriageClaim {
   researchStatus: string;
   researchedAt: string | null;
   evidence: string | null;
+  humanNote: string | null;
   extractionConfidence: number | null;
   createdAt: string;
   stock: { ticker: string; name: string | null };
@@ -49,12 +50,6 @@ const RESEARCH_COLORS: Record<string, string> = {
   researching: "text-blue-400 border-blue-400/30 bg-blue-400/10",
   done: "text-green-400 border-green-400/30 bg-green-400/10",
   failed: "text-red-400 border-red-400/30 bg-red-400/10",
-};
-
-const VERDICT_COLORS: Record<string, string> = {
-  supported: "text-green-400 border-green-400/30 bg-green-400/10 hover:bg-green-400/20",
-  refuted: "text-red-400 border-red-400/30 bg-red-400/10 hover:bg-red-400/20",
-  disputed: "text-purple-400 border-purple-400/30 bg-purple-400/10 hover:bg-purple-400/20",
 };
 
 // ── component ──
@@ -123,17 +118,6 @@ export default function TriageContent() {
     });
   }
 
-  async function setVerdict(claimId: number, ticker: string, verdict: string) {
-    setActionLoading({ claim: claimId });
-    await fetch(`/api/stocks/${ticker}/claims/${claimId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: verdict }),
-    });
-    setActionLoading(null);
-    refresh();
-  }
-
   async function reResearch(claimId: number) {
     setActionLoading({ claim: claimId });
     await fetch("/api/research", {
@@ -172,11 +156,11 @@ export default function TriageContent() {
     refresh();
   }
 
-  async function saveEvidence(claimId: number, ticker: string) {
+  async function saveNote(claimId: number, ticker: string) {
     await fetch(`/api/stocks/${ticker}/claims/${claimId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ evidence: editText }),
+      body: JSON.stringify({ humanNote: editText }),
     });
     setEditingId(null);
     refresh();
@@ -385,28 +369,15 @@ export default function TriageContent() {
 
                         {/* Meta row */}
                         <div className="flex items-center gap-2 mb-3">
-                          <button
-                            onClick={() =>
-                              setVerdict(
-                                claim.id,
-                                stock.ticker,
-                                claim.status === "unverified"
-                                  ? "supported"
-                                  : claim.status === "supported"
-                                    ? "refuted"
-                                    : claim.status === "refuted"
-                                      ? "disputed"
-                                      : "unverified"
-                              )
-                            }
-                            className={`text-[10px] border rounded-full px-2 py-0.5 transition ${
+                          <span
+                            className={`text-[10px] border rounded-full px-2 py-0.5 ${
                               STATUS_COLORS[claim.status] ||
                               STATUS_COLORS.unverified
                             }`}
-                            title="Click to cycle: unverified→supported→refuted→disputed"
+                            title="AI verdict — set by the research pipeline"
                           >
                             {claim.status}
-                          </button>
+                          </span>
                           <span
                             className={`text-[10px] border rounded-full px-2 py-0.5 ${
                               RESEARCH_COLORS[claim.researchStatus] ||
@@ -428,26 +399,29 @@ export default function TriageContent() {
                           </span>
                         </div>
 
-                        {/* Evidence */}
+                        {/* AI evidence (read-only) */}
+                        {claim.evidence && (
+                          <div className="mb-3">
+                            <p className="text-[11px] text-fg/60 bg-bg/50 border border-border rounded-lg p-2 whitespace-pre-wrap line-clamp-3">
+                              <span className="text-muted/60">AI evidence · </span>
+                              {claim.evidence}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Human note (editable) */}
                         {editingId === claim.id ? (
                           <div className="mb-3 space-y-2">
                             <textarea
                               value={editText}
-                              onChange={(e) =>
-                                setEditText(e.target.value)
-                              }
+                              onChange={(e) => setEditText(e.target.value)}
                               className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-xs text-fg min-h-[80px] resize-none"
                               autoFocus
-                              placeholder="Paste links, notes, or evidence..."
+                              placeholder="Your observations on this claim..."
                             />
                             <div className="flex gap-2">
                               <button
-                                onClick={() =>
-                                  saveEvidence(
-                                    claim.id,
-                                    stock.ticker
-                                  )
-                                }
+                                onClick={() => saveNote(claim.id, stock.ticker)}
                                 className="text-[10px] bg-accent text-bg px-2 py-1 rounded"
                               >
                                 Save
@@ -460,56 +434,36 @@ export default function TriageContent() {
                               </button>
                             </div>
                           </div>
-                        ) : claim.evidence ? (
+                        ) : claim.humanNote ? (
                           <div className="mb-3">
                             <p className="text-[11px] text-fg/60 bg-bg/50 border border-border rounded-lg p-2 whitespace-pre-wrap line-clamp-3">
-                              {claim.evidence}
+                              <span className="text-muted/60">Your note · </span>
+                              {claim.humanNote}
                             </p>
                             <button
                               onClick={() => {
-                                setEditText(claim.evidence || "");
+                                setEditText(claim.humanNote || "");
                                 setEditingId(claim.id);
                               }}
                               className="text-[10px] text-muted hover:text-fg mt-1"
                             >
-                              Edit evidence
+                              Edit note
                             </button>
                           </div>
                         ) : null}
 
                         {/* Action buttons */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] text-muted/40 mr-1">
-                            Quick verdict:
-                          </span>
-                          {(
-                            ["supported", "refuted", "disputed"] as const
-                          ).map((v) => (
-                            <button
-                              key={v}
-                              onClick={() =>
-                                setVerdict(claim.id, stock.ticker, v)
-                              }
-                              disabled={isLoadingClaim}
-                              className={`text-[10px] border rounded-full px-2 py-0.5 transition disabled:opacity-50 ${
-                                VERDICT_COLORS[v]
-                              }`}
-                            >
-                              {v}
-                            </button>
-                          ))}
+                          <button
+                            onClick={() => {
+                              setEditText(claim.humanNote || "");
+                              setEditingId(claim.id);
+                            }}
+                            className="text-[10px] text-muted hover:text-fg"
+                          >
+                            {claim.humanNote ? "edit note" : "+ note"}
+                          </button>
                           <span className="text-muted/20 mx-1">|</span>
-                          {!claim.evidence && (
-                            <button
-                              onClick={() => {
-                                setEditText("");
-                                setEditingId(claim.id);
-                              }}
-                              className="text-[10px] text-muted hover:text-fg"
-                            >
-                              + evidence
-                            </button>
-                          )}
                           <button
                             onClick={() => reResearch(claim.id)}
                             disabled={isLoadingClaim}
@@ -520,9 +474,7 @@ export default function TriageContent() {
                               : "research"}
                           </button>
                           <button
-                            onClick={() =>
-                              verifyOne(claim.id, stock.ticker)
-                            }
+                            onClick={() => verifyOne(claim.id, stock.ticker)}
                             disabled={isLoadingClaim}
                             className="text-[10px] text-accent hover:underline disabled:opacity-50"
                           >

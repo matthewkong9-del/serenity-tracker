@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { chat, chatJson } from "@/lib/deepseek";
 import { braveSearch } from "@/lib/brave";
 import { logPipelineRun } from "@/lib/pipeline-log";
-import { events } from "@/lib/events";
+import { enqueueTask } from "@/lib/pending-tasks";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -318,14 +318,13 @@ export async function researchClaim(
       },
     });
 
-    // Touch the stock's updatedAt so needsSummary() picks it up in the
-    // orchestrator path. Also emit claim:researched so the event-driven
-    // path triggers immediate re-summarization (debounced).
-    await prisma.stock.update({
-      where: { id: claim.stockId },
-      data: { updatedAt: new Date() },
+    // Queue a debounced re-summarization of this stock. Replaces the old
+    // stock.updatedAt touch + in-memory claim:researched event (ADR-0001).
+    await enqueueTask({
+      kind: "summarize",
+      ticker,
+      dueAt: new Date(Date.now() + 2 * 60 * 1000),
     });
-    events.emit("claim:researched", { ticker, claimId, newStatus });
 
     await logPipelineRun({
       stage: "research",

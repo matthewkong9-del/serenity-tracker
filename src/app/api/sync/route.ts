@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { chatJson } from "@/lib/deepseek";
 import { runExtractions } from "@/lib/relationships";
-import { researchNewClaims } from "@/lib/research";
+import { enqueueTask } from "@/lib/pending-tasks";
 import { logPipelineRun } from "@/lib/pipeline-log";
 import { notifyNewTweet } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
@@ -330,7 +330,7 @@ export async function POST(req: NextRequest) {
         const stock = await prisma.stock.findUnique({ where: { ticker: symbol } });
         if (!stock) continue;
 
-        await prisma.claim.create({
+        const claim = await prisma.claim.create({
           data: {
             stockId: stock.id,
             tweetId: tweet.id,
@@ -345,6 +345,15 @@ export async function POST(req: NextRequest) {
         });
         tweetClaims++;
         newlyAffectedTickers.add(symbol);
+
+        // Queue research for auto-eligible claims: low-impact (≤3) always
+        // auto-researches; high-impact (≥4) escalates to Telegram for human
+        // review when Telegram is configured. (ADR-0001 — work via PendingTask)
+        const shouldAutoResearch =
+          !telegramConfigured || (claim.impactScore ?? 3) <= 3;
+        if (shouldAutoResearch) {
+          await enqueueTask({ kind: "research", claimId: claim.id, ticker: symbol });
+        }
       }
 
       // Log extraction
@@ -478,18 +487,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Re-extract relationships ONLY for stocks that received new claims this sync
+  // Re-extract relationships ONLY for stocks that received new claims this sync.
+  // Safe from drain concurrency: the drain only extracts a ticker AFTER that
+  // ticker's summarize runs, which is post-sync — so no overlap here.
   void runRelationshipExtractions(Array.from(newlyAffectedTickers), apiKey).catch((e) => {
     console.error("[sync] background relationship extraction failed:", e);
   });
-
-  // Agent 2: Research new claims in the background.
-  // SKIP if Telegram is configured — the user will give orders via Telegram.
-  if (!telegramConfigured && newlyAffectedTickers.size > 0) {
-    void researchNewClaims(Array.from(newlyAffectedTickers), apiKey).catch((e) => {
-      console.error("[sync] background claim research failed:", e);
-    });
-  }
 
   return NextResponse.json({
     newTweets,
