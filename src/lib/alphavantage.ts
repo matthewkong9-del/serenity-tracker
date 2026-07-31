@@ -7,6 +7,11 @@
 
 const API_KEY = () => process.env.ALPHA_VANTAGE_API_KEY!;
 
+// Suppress duplicate rate-limit warnings — log once per process lifetime
+// since the 25/day free-tier limit is hit frequently and each call after
+// would otherwise print a warning, flooding stderr.
+let rateLimitLogged = false;
+
 // ── Exchange suffix mapping ────────────────────────────────────────────
 // Alpha Vantage uses different suffixes than Finnhub/Yahoo.
 // Mappings discovered from Alpha Vantage docs and testing.
@@ -106,9 +111,12 @@ async function fetchOverview(symbol: string): Promise<AvOverview | null> {
     if (!res.ok) return null;
     const data: AvOverview & { Note?: string; Information?: string } = await res.json();
 
-    // Rate limit message
+    // Rate limit message — log once per process to avoid stderr flood
     if (data.Note || data.Information) {
-      console.warn(`[alphavantage] rate limited: ${data.Note || data.Information}`);
+      if (!rateLimitLogged) {
+        rateLimitLogged = true;
+        console.warn(`[alphavantage] rate limited: ${data.Note || data.Information}`);
+      }
       return null;
     }
 

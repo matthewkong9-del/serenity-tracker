@@ -33,6 +33,8 @@ const __s = ((globalThis as any).__scheduler ??= {
   paused: false,
   running: false,
   intervalId: null as ReturnType<typeof setInterval> | null,
+  /** Suppress "previous tick still running" — log at most once per 5 min. */
+  lastSkippedLogAt: 0,
 });
 
 const TICK_INTERVAL_MS = parseInt(
@@ -44,7 +46,11 @@ const TICK_INTERVAL_MS = parseInt(
 
 async function tick(): Promise<void> {
   if (__s.running) {
-    console.log("[scheduler] previous tick still running, skipping");
+    // Log at most once every 5 min — long ticks are normal when draining tasks
+    if (Date.now() - __s.lastSkippedLogAt > 5 * 60 * 1000) {
+      __s.lastSkippedLogAt = Date.now();
+      console.log("[scheduler] previous tick still running, skipping");
+    }
     return;
   }
   __s.running = true;

@@ -131,7 +131,7 @@ export async function chat(
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(120_000), // 2 min — prevents hung PipelineRuns
+    signal: AbortSignal.timeout(180_000), // 3 min — DeepSeek v4-pro can be slow with large prompts
   });
 
   const data = await response.json();

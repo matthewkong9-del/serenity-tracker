@@ -31,6 +31,7 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
     prisma.pipelineRun.count({
       where: {
         status: "started",
+        stage: { not: "triage" }, // triage awaits human input (up to 48h) — not stuck
         startedAt: { lte: new Date(now.getTime() - 10 * 60 * 1000) },
       },
     }),

@@ -148,6 +148,8 @@ let lastUpdateId = 0;
 /** When set, polling is paused until this timestamp (ms). Used to back off
  *  on a 409 Conflict — another process is polling this same bot token. */
 let pollBackoffUntil = 0;
+/** Suppress repeated 409 log lines — surface at most once per hour. */
+let last409LogAt = 0;
 
 export interface TelegramCommand {
   command: string;
@@ -182,9 +184,12 @@ export async function checkForOrders(): Promise<TelegramCommand[]> {
       }
       if (errorCode === 409) {
         pollBackoffUntil = Date.now() + 5 * 60 * 1000;
-        console.warn(
-          "[telegram] 409 conflict — another bot poller is active; backing off 5 min"
-        );
+        if (Date.now() - last409LogAt > 60 * 60 * 1000) {
+          last409LogAt = Date.now();
+          console.warn(
+            "[telegram] 409 conflict — another bot poller is active; backing off 5 min"
+          );
+        }
       } else {
         console.error(`[telegram] poll failed: ${body}`);
       }

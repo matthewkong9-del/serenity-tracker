@@ -55,9 +55,9 @@ const TASK_KIND_TO_STAGE: Record<TaskKind, PipelineStage> = {
 
 /** Backoff in ms for the Nth retry (attempt is 1-based: first failure → 1). */
 export function backoffMs(attempt: number): number {
-  // 30s → 2min → 10min
-  const table = [30_000, 120_000, 600_000];
-  return table[Math.min(attempt - 1, table.length - 1)] ?? 600_000;
+  // 60s → 5min → 20min (slower recovery after 3-min timeouts)
+  const table = [60_000, 300_000, 1_200_000];
+  return table[Math.min(attempt - 1, table.length - 1)] ?? 1_200_000;
 }
 
 /** research tasks dedup on claimId; everything else on ticker. */
@@ -176,51 +176,68 @@ export async function failTask(
 
 // ── Dispatch ────────────────────────────────────────────────────────────────
 
+/** Hard deadline per task — prevents any single task from hanging the drain.
+ *  Long enough for several sequential DeepSeek calls (3 min each × 3 = 9 min). */
+const PER_TASK_TIMEOUT_MS = 10 * 60 * 1000;
+
 async function dispatch(
   task: { id: number; kind: string; ticker: string | null; claimId: number | null; attempts: number },
   apiKey: string,
   handlers: TaskHandlers
 ): Promise<void> {
-  switch (task.kind) {
-    case "research": {
-      if (task.claimId == null || !task.ticker) {
-        throw new Error("research task missing claimId/ticker");
+  const inner = async (): Promise<void> => {
+    switch (task.kind) {
+      case "research": {
+        if (task.claimId == null || !task.ticker) {
+          throw new Error("research task missing claimId/ticker");
+        }
+        // researchClaim catches its own errors and sets researchStatus="failed",
+        // so it does not throw. Detect success/failure via the claim's state.
+        await handlers.research(task.claimId, task.ticker, apiKey);
+        const claim = await prisma.claim.findUnique({
+          where: { id: task.claimId },
+          select: { researchStatus: true },
+        });
+        if (claim?.researchStatus !== "done") {
+          throw new Error(`research did not complete (researchStatus=${claim?.researchStatus})`);
+        }
+        break;
       }
-      // researchClaim catches its own errors and sets researchStatus="failed",
-      // so it does not throw. Detect success/failure via the claim's state.
-      await handlers.research(task.claimId, task.ticker, apiKey);
-      const claim = await prisma.claim.findUnique({
-        where: { id: task.claimId },
-        select: { researchStatus: true },
-      });
-      if (claim?.researchStatus !== "done") {
-        throw new Error(`research did not complete (researchStatus=${claim?.researchStatus})`);
+      case "summarize": {
+        if (!task.ticker) throw new Error("summarize task missing ticker");
+        await handlers.summarize(task.ticker, apiKey);
+        break;
       }
-      break;
+      case "extract": {
+        if (!task.ticker) throw new Error("extract task missing ticker");
+        await handlers.extract(task.ticker, apiKey);
+        break;
+      }
+      case "narrative": {
+        if (!task.ticker) throw new Error("narrative task missing ticker");
+        await handlers.narrative(task.ticker, apiKey);
+        break;
+      }
+      case "decision": {
+        if (!task.ticker) throw new Error("decision task missing ticker");
+        await handlers.decision(task.ticker, apiKey);
+        break;
+      }
+      default:
+        throw new Error(`unknown task kind: ${task.kind}`);
     }
-    case "summarize": {
-      if (!task.ticker) throw new Error("summarize task missing ticker");
-      await handlers.summarize(task.ticker, apiKey);
-      break;
-    }
-    case "extract": {
-      if (!task.ticker) throw new Error("extract task missing ticker");
-      await handlers.extract(task.ticker, apiKey);
-      break;
-    }
-    case "narrative": {
-      if (!task.ticker) throw new Error("narrative task missing ticker");
-      await handlers.narrative(task.ticker, apiKey);
-      break;
-    }
-    case "decision": {
-      if (!task.ticker) throw new Error("decision task missing ticker");
-      await handlers.decision(task.ticker, apiKey);
-      break;
-    }
-    default:
-      throw new Error(`unknown task kind: ${task.kind}`);
-  }
+  };
+
+  // Race the handler against a hard deadline so a hung task can't stall the
+  // drain forever. The per-fetch AbortSignal (3 min) normally catches timeouts,
+  // but handlers that make multiple sequential calls could still outlive the
+  // drain window.
+  await Promise.race([
+    inner(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Task timed out after ${PER_TASK_TIMEOUT_MS / 60_000}min`)), PER_TASK_TIMEOUT_MS)
+    ),
+  ]);
 }
 
 // ── Drain (called by orchestratorTick) ──────────────────────────────────────
