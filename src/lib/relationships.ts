@@ -21,7 +21,8 @@ interface RelationshipExtract {
 async function buildContextForStock(ticker: string): Promise<string | null> {
   const stock = await prisma.stock.findUnique({
     where: { ticker },
-    include: {
+    select: {
+      summary: true,
       files: { select: { originalName: true, fileType: true, markdown: true } },
       notes: { select: { title: true, content: true, tag: true } },
       claims: {
@@ -74,12 +75,27 @@ async function buildContextForStock(ticker: string): Promise<string | null> {
     }
   }
 
-  // Documents
+  // AI summary — a pre-digested overview of all documents, claims, and notes.
+  // Use it so the LLM gets the full picture even when individual docs are truncated.
+  if (stock.summary) {
+    sections.push("--- AI SUMMARY (condensed overview of all data) ---");
+    sections.push(stock.summary);
+  }
+
+  // Documents — truncate each to keep the prompt within reasonable bounds.
+  // The AI summary above already covers the key points from every document;
+  // these excerpts give the LLM specific names and details from the source text.
+  const MAX_DOC_CHARS = 8000;
   const docsWithContent = stock.files.filter((f) => f.markdown);
   if (docsWithContent.length > 0) {
     sections.push("--- DOCUMENTS ---");
     for (const f of docsWithContent) {
-      sections.push(`[Document: ${f.originalName} (${f.fileType})]\n${f.markdown}`);
+      const truncated =
+        (f.markdown?.length ?? 0) > MAX_DOC_CHARS
+          ? f.markdown!.slice(0, MAX_DOC_CHARS) +
+            `\n\n[...truncated ${f.markdown!.length - MAX_DOC_CHARS} chars]`
+          : f.markdown;
+      sections.push(`[Document: ${f.originalName} (${f.fileType})]\n${truncated}`);
     }
   }
 
@@ -230,7 +246,11 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
   try {
     const result = await chatJson<{
       relationships: RelationshipExtract[];
-    }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.2, purpose: "relationship" });
+    }>([{ role: "user", content: prompt }], apiKey, {
+      temperature: 0.2,
+      purpose: "relationship",
+      timeoutMs: 300_000, // 5 min — relationship prompts are the largest in the app
+    });
 
     if (!result.relationships || result.relationships.length === 0) {
       await logPipelineRun({
@@ -292,7 +312,11 @@ export async function extractContrarianAngles(ticker: string, apiKey: string): P
 
   const result = await chatJson<{
     angles: RelationshipExtract[];
-  }>([{ role: "user", content: prompt }], apiKey, { temperature: 0.4 });
+  }>([{ role: "user", content: prompt }], apiKey, {
+    temperature: 0.4,
+    purpose: "contrarian",
+    timeoutMs: 300_000, // 5 min — same large context as relationships
+  });
 
   if (!result.angles || result.angles.length === 0) return;
 

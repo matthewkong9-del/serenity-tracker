@@ -4,6 +4,8 @@ export interface DeepSeekOptions {
   responseFormat?: "text" | "json_object";
   /** What this call is for — logged to track costs. */
   purpose?: string;
+  /** Per-call timeout in ms. Default 180_000 (3 min). Increase for large prompts. */
+  timeoutMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +133,7 @@ export async function chat(
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(180_000), // 3 min — DeepSeek v4-pro can be slow with large prompts
+    signal: AbortSignal.timeout(options?.timeoutMs ?? 180_000),
   });
 
   const data = await response.json();
