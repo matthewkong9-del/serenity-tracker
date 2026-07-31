@@ -216,7 +216,7 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
         { role: "user", content: `DATA TO ANALYZE:\n\n${context}` },
       ],
       apiKey,
-      { temperature: 0.3, purpose: "summarize" }
+      { temperature: 0.3, purpose: "summarize", timeoutMs: 600_000 } // 10 min — full docs can be large
     );
 
     const chokepointDepth = parseChokepointDepth(summaryText);

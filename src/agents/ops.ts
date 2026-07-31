@@ -110,7 +110,8 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
     fixes.push(`Reclaimed ${stuckTasks} orphaned task(s)`);
   }
 
-  // 5. Dead tasks — surface for human review, do NOT auto-retry
+  // 5. Dead tasks — surface for human review, then re-enqueue extract tasks
+  //    so the error badge self-heals on next successful extraction.
   const deadTasks = await prisma.pendingTask.findMany({
     where: { status: "dead" },
     select: { id: true, kind: true, ticker: true, claimId: true, lastError: true, attempts: true },
@@ -121,6 +122,50 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
       humanReview.push(
         `Dead ${dt.kind} task${dt.ticker ? ` for $${dt.ticker}` : ""}${dt.claimId ? ` claim#${dt.claimId}` : ""}: ${dt.lastError?.slice(0, 100) || "no error"} (${dt.attempts} attempts)`
       );
+    }
+
+    // Re-enqueue dead extract tasks — extraction is idempotent and the
+    // underlying cause may have resolved (timeout fix, network recovery).
+    const deadExtracts = deadTasks.filter((t) => t.kind === "extract" && t.ticker);
+    for (const dt of deadExtracts) {
+      await enqueueTask({
+        kind: "extract",
+        ticker: dt.ticker!,
+        source: "scheduler",
+      });
+    }
+    if (deadExtracts.length > 0) {
+      fixes.push(`Re-enqueued ${deadExtracts.length} dead extract task(s)`);
+    }
+  }
+
+  // 6. Re-enqueue extract for any stock still showing an extractionError
+  //    (belt-and-suspenders — catches errors from direct API calls that
+  //    bypass the task queue).
+  const errorStocks = await prisma.stock.findMany({
+    where: { extractionError: { not: null } },
+    select: { ticker: true },
+    take: 20,
+  });
+  if (errorStocks.length > 0) {
+    const busyTickers = new Set(
+      (
+        await prisma.pendingTask.findMany({
+          where: {
+            kind: "extract",
+            ticker: { in: errorStocks.map((s) => s.ticker) },
+            status: { in: ["pending", "claimed"] },
+          },
+          select: { ticker: true },
+        })
+      ).map((r) => r.ticker!)
+    );
+    const needsRetry = errorStocks.filter((s) => !busyTickers.has(s.ticker));
+    for (const s of needsRetry) {
+      await enqueueTask({ kind: "extract", ticker: s.ticker, source: "scheduler" });
+    }
+    if (needsRetry.length > 0) {
+      fixes.push(`Re-enqueued extraction for ${needsRetry.length} error-flagged stock(s)`);
     }
   }
 
