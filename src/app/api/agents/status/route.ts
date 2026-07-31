@@ -89,10 +89,21 @@ async function getAgentStats(stages: string[]) {
     metric = { label: "Stocks analyzed", value: String(count) };
   }
 
-  // Research agent: pending claims + content coverage stats
+  // Research agent: claims needing research + researched-but-unresolved
   if (stages.includes("research")) {
-    const [pending, emptyStocks] = await Promise.all([
-      prisma.claim.count({ where: { status: "unverified" } }),
+    const [needsResearch, researchedUnresolved, emptyStocks] = await Promise.all([
+      prisma.claim.count({
+        where: {
+          status: "unverified",
+          researchStatus: { in: ["pending", "failed"] },
+        },
+      }),
+      prisma.claim.count({
+        where: {
+          status: "unverified",
+          researchStatus: "done",
+        },
+      }),
       prisma.stock.count({
         where: {
           claims: { none: {} },
@@ -101,7 +112,7 @@ async function getAgentStats(stages: string[]) {
         },
       }),
     ]);
-    metric = { label: "Pending / Empty", value: `${pending} / ${emptyStocks}` };
+    metric = { label: "To research / Unresolved / Empty", value: `${needsResearch} / ${researchedUnresolved} / ${emptyStocks}` };
   }
 
   // Price agent: stocks with prices
