@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { chat } from "@/lib/deepseek";
-import { logPipelineRun } from "@/lib/pipeline-log";
+import { logPipelineRun, completePipelineRun } from "@/lib/pipeline-log";
 
 // ── Narrative Engine ───────────────────────────────────────────────────────
 // Takes the analytical summary + all evidence, rewrites it in a
@@ -138,14 +138,13 @@ export async function generateNarrative(
     .replace("{summary}", stock.summary)
     .replace("{evidence}", evidenceText.slice(0, 8000)); // guard against context overflow
 
-  await logPipelineRun({
-    stage: "summarize",
+  const runId = await logPipelineRun({
+    stage: "narrative",
     status: "started",
     stockTicker: ticker,
     stockId: stock.id,
     input: {
-      source: "narrative_engine",
-      summaryLength: stock.summary.length,
+      summaryLength: stock.summary?.length ?? 0,
       evidenceLength: evidenceText.length,
     },
   });
@@ -161,25 +160,23 @@ export async function generateNarrative(
       data: { narrative: narrative.trim() },
     });
 
-    await logPipelineRun({
-      stage: "summarize",
-      status: "completed",
-      stockTicker: ticker,
-      stockId: stock.id,
-      output: { narrativeLength: narrative.length },
-      decision: "Narrative generated successfully.",
-    });
+    if (runId) {
+      await completePipelineRun(runId, {
+        status: "completed",
+        output: { narrativeLength: narrative.length },
+        decision: "Narrative generated successfully.",
+      });
+    }
 
     return narrative.trim();
   } catch (e: any) {
-    await logPipelineRun({
-      stage: "summarize",
-      status: "failed",
-      stockTicker: ticker,
-      stockId: stock.id,
-      error: e.message?.slice(0, 500),
-      decision: "Narrative generation failed.",
-    });
+    if (runId) {
+      await completePipelineRun(runId, {
+        status: "failed",
+        error: e.message?.slice(0, 500),
+        decision: "Narrative generation failed.",
+      });
+    }
     throw e;
   }
 }

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { chatJson } from "@/lib/deepseek";
-import { logPipelineRun } from "@/lib/pipeline-log";
+import { logPipelineRun, completePipelineRun } from "@/lib/pipeline-log";
 
 /** Normalize sources field — DeepSeek sometimes returns an array despite the schema saying string. */
 function safeSources(v: unknown): string | null {
@@ -235,7 +235,7 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
 
   const prompt = buildRelationshipPrompt(ticker, context);
 
-  await logPipelineRun({
+  const runId = await logPipelineRun({
     stage: "relationship",
     status: "started",
     stockTicker: ticker,
@@ -253,14 +253,13 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
     });
 
     if (!result.relationships || result.relationships.length === 0) {
-      await logPipelineRun({
-        stage: "relationship",
-        status: "completed",
-        stockTicker: ticker,
-        stockId: stock.id,
-        output: { count: 0 },
-        decision: "No relationships found.",
-      });
+      if (runId) {
+        await completePipelineRun(runId, {
+          status: "completed",
+          output: { count: 0 },
+          decision: "No relationships found.",
+        });
+      }
       return;
     }
 
@@ -283,23 +282,21 @@ export async function extractRelationships(ticker: string, apiKey: string): Prom
       })),
     });
 
-    await logPipelineRun({
-      stage: "relationship",
-      status: "completed",
-      stockTicker: ticker,
-      stockId: stock.id,
-      output: { count: result.relationships.length },
-      decision: `Extracted ${result.relationships.length} relationships.`,
-    });
+    if (runId) {
+      await completePipelineRun(runId, {
+        status: "completed",
+        output: { count: result.relationships.length },
+        decision: `Extracted ${result.relationships.length} relationships.`,
+      });
+    }
   } catch (e: any) {
-    await logPipelineRun({
-      stage: "relationship",
-      status: "failed",
-      stockTicker: ticker,
-      stockId: stock.id,
-      error: e.message?.slice(0, 500) || "Unknown error",
-      decision: "Relationship extraction failed.",
-    });
+    if (runId) {
+      await completePipelineRun(runId, {
+        status: "failed",
+        error: e.message?.slice(0, 500) || "Unknown error",
+        decision: "Relationship extraction failed.",
+      });
+    }
     throw e;
   }
 }

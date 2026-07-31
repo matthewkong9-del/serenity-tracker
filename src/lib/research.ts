@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { chat, chatJson } from "@/lib/deepseek";
 import { braveSearch } from "@/lib/brave";
-import { logPipelineRun } from "@/lib/pipeline-log";
+import { logPipelineRun, completePipelineRun } from "@/lib/pipeline-log";
 import { enqueueTask } from "@/lib/pending-tasks";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -256,7 +256,7 @@ export async function researchClaim(
     data: { researchStatus: "researching" },
   });
 
-  await logPipelineRun({
+  const runId = await logPipelineRun({
     stage: "research",
     status: "started",
     stockTicker: ticker,
@@ -326,15 +326,13 @@ export async function researchClaim(
       dueAt: new Date(Date.now() + 2 * 60 * 1000),
     });
 
-    await logPipelineRun({
-      stage: "research",
-      status: "completed",
-      stockTicker: ticker,
-      stockId: claim.stockId,
-      claimId,
-      output: { verdict: newStatus, depth },
-      decision,
-    });
+    if (runId) {
+      await completePipelineRun(runId, {
+        status: "completed",
+        output: { verdict: newStatus, depth },
+        decision,
+      });
+    }
   } catch (e: any) {
     await prisma.claim.update({
       where: { id: claimId },
@@ -343,15 +341,13 @@ export async function researchClaim(
         evidence: `Research failed: ${e.message.slice(0, 500)}`,
       },
     });
-    await logPipelineRun({
-      stage: "research",
-      status: "failed",
-      stockTicker: ticker,
-      stockId: claim.stockId,
-      claimId,
-      error: e.message?.slice(0, 500) || "Unknown error",
-      decision: "Research failed — see error.",
-    });
+    if (runId) {
+      await completePipelineRun(runId, {
+        status: "failed",
+        error: e.message?.slice(0, 500) || "Unknown error",
+        decision: "Research failed — see error.",
+      });
+    }
   }
 }
 
