@@ -91,19 +91,40 @@ export default function StockNarrative({ narrative, ticker, onSave }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(narrative || "");
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const sections = useMemo(
     () => (narrative ? parseSections(narrative) : []),
     [narrative]
   );
 
+  async function handleRegenerate() {
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/stocks/${ticker}/narrative`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        await onSave(data.narrative); // saves via PUT and triggers parent reload
+      }
+    } catch {/* silent */} finally {
+      setRegenerating(false);
+    }
+  }
+
   if (!narrative && !editing) {
     return (
       <div className="bg-surface border border-border rounded-xl p-8 text-center">
-        <p className="text-muted text-sm mb-2">No narrative yet</p>
-        <p className="text-muted/50 text-xs">
-          Run a summary first, then the narrative will be generated automatically.
+        <p className="text-muted text-sm mb-2">No narrative story yet</p>
+        <p className="text-muted/50 text-xs mb-3">
+          Run a summary first, then generate the story.
         </p>
+        <button
+          onClick={handleRegenerate}
+          disabled={regenerating}
+          className="text-xs border border-border text-muted hover:text-fg px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+        >
+          {regenerating ? "Generating..." : "📖 Generate story"}
+        </button>
       </div>
     );
   }
@@ -147,16 +168,26 @@ export default function StockNarrative({ narrative, ticker, onSave }: Props) {
 
   return (
     <div className="relative group">
-      {/* Edit button — floats above all cards */}
-      <button
-        onClick={() => {
-          setDraft(narrative || "");
-          setEditing(true);
-        }}
-        className="absolute -top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition text-xs text-muted hover:text-fg border border-border rounded-lg px-2 py-1 bg-surface shadow-sm"
-      >
-        ✏️ Edit story
-      </button>
+      {/* Edit + Regenerate buttons — float above all cards */}
+      <div className="absolute -top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
+        <button
+          onClick={handleRegenerate}
+          disabled={regenerating}
+          className="text-xs text-muted hover:text-fg border border-border rounded-lg px-2 py-1 bg-surface shadow-sm disabled:opacity-50"
+          title="Regenerate story from latest analyst report"
+        >
+          {regenerating ? "⏳" : "📖"}
+        </button>
+        <button
+          onClick={() => {
+            setDraft(narrative || "");
+            setEditing(true);
+          }}
+          className="text-xs text-muted hover:text-fg border border-border rounded-lg px-2 py-1 bg-surface shadow-sm"
+        >
+          ✏️ Edit
+        </button>
+      </div>
 
       {/* Section cards */}
       <div className="space-y-3">

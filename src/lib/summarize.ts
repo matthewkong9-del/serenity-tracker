@@ -174,6 +174,33 @@ async function buildContext(stock: StockWithData): Promise<string> {
     }
   }
 
+  // 6. Research Q&A — user's answered questions
+  // Cast to access the optional joined fields (not on the base interface)
+  const questions = (stock as any).questions as any[] | undefined;
+  if (questions && questions.length > 0) {
+    const answered = questions.filter((q) => q.answer);
+    if (answered.length > 0) {
+      sections.push("--- RESEARCH Q&A (investor's own findings) ---");
+      for (const q of answered) {
+        sections.push(`Q: ${q.question}`);
+        sections.push(`A: ${q.answer}`);
+        if (q.category) sections.push(`  Category: ${q.category}`);
+      }
+    }
+  }
+
+  // 7. Reflections — investor's learning journal
+  const annotations = (stock as any).annotations as any[] | undefined;
+  if (annotations && annotations.length > 0) {
+    const freestyle = annotations.filter((a) => !a.section);
+    if (freestyle.length > 0) {
+      sections.push("--- REFLECTIONS (investor's own learning) ---");
+      for (const a of freestyle.slice(0, 10)) {
+        sections.push(`[${new Date(a.createdAt).toLocaleDateString()}] ${a.text}`);
+      }
+    }
+  }
+
   return sections.join("\n\n");
 }
 
@@ -186,6 +213,17 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
       claims: {
         include: { tweet: { select: { content: true, timestamp: true } } },
         orderBy: { createdAt: "desc" },
+      },
+      questions: {
+        where: { answer: { not: null } },
+        select: { question: true, answer: true, category: true },
+        orderBy: { answeredAt: "desc" },
+      },
+      annotations: {
+        where: { section: null },
+        select: { text: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 10,
       },
     },
   });
@@ -234,7 +272,21 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
     // narrative. Replaces the dead stock:summarized event + the inline calls
     // that used to live in orchestratorTick (ADR-0001).
     await enqueueTask({ kind: "extract", ticker });
-    await enqueueTask({ kind: "narrative", ticker });
+    // Narrative is NOT auto-regenerated — the story is stable and user-editable.
+    // User can regenerate it manually via the "Regenerate story" button.
+
+    // Fire-and-forget: generate research questions + check answer staleness.
+    // Same pattern as generateNarrative — runs async, errors logged but never
+    // block the summary response.
+    const { generateQuestions } = await import("@/lib/questions");
+    void generateQuestions(ticker, apiKey).catch((e) =>
+      console.error(`[summarize] question generation failed for ${ticker}:`, e)
+    );
+
+    // Fire-and-forget: generate executive brief synthesis
+    void generateSynthesis(ticker, apiKey).catch((e) =>
+      console.error(`[summarize] synthesis generation failed for ${ticker}:`, e)
+    );
 
     if (runId) {
       await completePipelineRun(runId, {
@@ -257,6 +309,181 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
       });
     }
     throw e;
+  }
+}
+
+// ── Executive Brief Synthesis ──────────────────────────────────────────────
+// Generates a compact, scannable executive summary from ALL sources:
+// claims, documents, notes, Q&A answers, reflections, relationships.
+// Designed to be read in 30 seconds — the "at a glance" state of research.
+
+const SYNTHESIS_PROMPT = `You are writing an executive brief for an investor who needs to understand a stock in 30 seconds.
+
+Synthesize ALL available sources into a tight, scannable summary. The investor has already done their own research — include their Q&A findings and reflections.
+
+SOURCES:
+- Tweets & Claims (with verification status)
+- Uploaded Documents (annual reports, filings, articles)
+- User's Research Q&A (their own findings — HIGH reliability)
+- User's Reflections (what they've learned)
+- Relationships (supply chain map)
+
+RULES:
+- Be brief. This is not the full analysis — it's the headline version.
+- Every claim MUST cite its source type: "(from Q3 filing)", "(your research)", "(verified claim)", "(unverified)"
+- If the user has answered research questions, treat those as HIGH reliability.
+- If sources disagree, note the conflict.
+- Mention what's MISSING — the biggest gap in the research.
+
+OUTPUT FORMAT (use exactly this structure):
+
+**Stance:** 🟢 Bullish / 🔴 Bearish / 🟡 Neutral
+**Confidence:** X/5
+**Thesis:** One sentence — the core investment case.
+
+**Key Evidence:**
+- [source type] Fact or finding (2-4 bullets max)
+
+**What's New:**
+- What changed since the last analysis? New answers? New documents? (1-2 bullets)
+
+**Biggest Gap:**
+- What do we still need to know? (1 bullet)
+
+**Research Progress:**
+- X questions answered, Y reflections written`;
+
+/**
+ * Generate a 30-second executive brief synthesizing all research sources.
+ * Stored in Stock.synthesis. Fire-and-forget — never throws.
+ */
+export async function generateSynthesis(
+  ticker: string,
+  apiKey: string
+): Promise<string | null> {
+  try {
+    const stock = await prisma.stock.findUnique({
+      where: { ticker },
+      include: {
+        files: { select: { originalName: true, fileType: true, markdown: true } },
+        notes: { select: { title: true, content: true, tag: true } },
+        claims: {
+          select: { text: true, status: true, evidence: true },
+          orderBy: { createdAt: "desc" },
+        },
+        questions: {
+          select: { question: true, answer: true, category: true, status: true },
+        },
+        annotations: {
+          where: { section: null },
+          select: { text: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        },
+        relationships: {
+          select: { type: true, target: true, description: true, sourceConfidence: true },
+        },
+      },
+    });
+    if (!stock) return null;
+
+    // Build compact context
+    const parts: string[] = [];
+
+    // Claims summary
+    if (stock.claims.length > 0) {
+      parts.push("--- CLAIMS ---");
+      const statuses = { supported: 0, refuted: 0, disputed: 0, unverified: 0 };
+      for (const c of stock.claims) {
+        const s = c.status as keyof typeof statuses;
+        if (s in statuses) statuses[s]++;
+      }
+      parts.push(
+        `Summary: ${statuses.supported} verified, ${statuses.refuted} refuted, ${statuses.disputed} disputed, ${statuses.unverified} unverified`
+      );
+      // Key claims only
+      const key = stock.claims.filter((c) => c.status === "supported" || c.evidence).slice(0, 10);
+      for (const c of key) {
+        const label = { supported: "✅", refuted: "❌", disputed: "🔶", unverified: "⚠️" }[
+          c.status
+        ] || c.status;
+        parts.push(`${label} ${c.text}${c.evidence ? ` (evidence: ${c.evidence.slice(0, 200)})` : ""}`);
+      }
+    }
+
+    // Documents
+    if (stock.files.length > 0) {
+      parts.push("--- DOCUMENTS ---");
+      for (const f of stock.files) {
+        parts.push(`${f.markdown ? "✓" : "✗"} ${f.originalName} (${f.fileType})`);
+      }
+    }
+
+    // Research Q&A
+    const answered = stock.questions.filter((q) => q.answer);
+    if (answered.length > 0) {
+      parts.push("--- USER'S RESEARCH (HIGH RELIABILITY) ---");
+      for (const q of answered.slice(0, 8)) {
+        parts.push(`Q: ${q.question}\nA: ${q.answer!.slice(0, 400)}`);
+      }
+    }
+
+    // Reflections
+    if (stock.annotations.length > 0) {
+      parts.push("--- USER'S REFLECTIONS ---");
+      for (const a of stock.annotations.slice(0, 5)) {
+        parts.push(`[${new Date(a.createdAt).toLocaleDateString()}] ${a.text.slice(0, 300)}`);
+      }
+    }
+
+    // Relationships
+    if (stock.relationships.length > 0) {
+      parts.push("--- RELATIONSHIPS ---");
+      for (const r of stock.relationships.slice(0, 10)) {
+        const conf = r.sourceConfidence === "confirmed" ? "✓" : r.sourceConfidence === "gap" ? "?" : "~";
+        parts.push(`${conf} ${r.type}: ${r.target} — ${(r.description || "").slice(0, 200)}`);
+      }
+    }
+
+    // Notes
+    if (stock.notes.length > 0) {
+      parts.push("--- NOTES ---");
+      for (const n of stock.notes.slice(0, 5)) {
+        parts.push(`${n.title ? n.title + ": " : ""}${n.content.slice(0, 300)}`);
+      }
+    }
+
+    const context = parts.join("\n\n");
+    if (!context.trim()) return null;
+
+    // Stats for the prompt
+    const questionStats = `${answered.length}/${stock.questions.length} questions answered`;
+    const reflectionCount = `${stock.annotations.length} reflections`;
+
+    const synthesis = await chat(
+      [
+        { role: "system", content: SYNTHESIS_PROMPT },
+        {
+          role: "user",
+          content: `Ticker: $${ticker}\n${questionStats}, ${reflectionCount}\n\nRESEARCH DATA:\n\n${context.slice(0, 12000)}`,
+        },
+      ],
+      apiKey,
+      { temperature: 0.3, purpose: "synthesis", timeoutMs: 180_000 }
+    );
+
+    await prisma.stock.update({
+      where: { ticker },
+      data: {
+        synthesis,
+        lastSynthesisAt: new Date(),
+      },
+    });
+
+    return synthesis;
+  } catch (e: any) {
+    console.error(`[synthesis] failed for ${ticker}:`, e.message);
+    return null;
   }
 }
 

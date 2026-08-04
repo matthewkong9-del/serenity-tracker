@@ -27,6 +27,7 @@ export type PipelineStage =
   | "auditor"       // content quality scan
   | "editor"        // auto-fix content issues
   | "decision"      // investment thesis generation
+  | "study"         // research question generation + reflection checking
 
 export type RunStatus = "started" | "completed" | "failed" | "skipped";
 

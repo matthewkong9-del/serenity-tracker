@@ -18,6 +18,8 @@ model Stock {
   extractionError String?
   chokepointDepth Int?     // 1-5: how essential is what this company controls? Set by AI summary.
   narrative     String?    // conversational knowledge base story — generated after summarization
+  synthesis     String?    // executive brief — scannable 30-second summary of ALL sources
+  lastSynthesisAt DateTime?
   currentPrice    Float?
   currency        String?  // "USD", "KRW", "EUR", "CNY", "CAD", "TWD", "JPY", "HKD" etc. null = USD
   priceUsd        Float?   // USD-normalized price for cross-stock comparison (computed during refresh)
@@ -34,6 +36,7 @@ model Stock {
   claims          Claim[]
   relationships   Relationship[]
   annotations     Annotation[]
+  questions       ResearchQuestion[]
   decision        Decision?
 }
 
@@ -183,13 +186,36 @@ model PipelineRun {
 }
 
 model Annotation {
-  id        Int      @id @default(autoincrement())
-  stockId   Int
-  stock     Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
-  section   String   // which narrative section this annotates: "what" | "chokepoint" | "numbers" | "risk" | "bottom"
-  text      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          Int       @id @default(autoincrement())
+  stockId     Int
+  stock       Stock     @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  section     String?   // null = freestyle reflection; "what"/"chokepoint"/"numbers"/"risk"/"bottom" for narrative-anchored
+  text        String
+  aiFlag      String?   // study-pal flag: e.g. "contradiction", "outdated"
+  aiCheckedAt DateTime? // last time the study pass checked this reflection
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ResearchQuestion {
+  id           Int      @id @default(autoincrement())
+  stockId      Int
+  stock        Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  question     String
+  answer       String?
+  source       String   @default("template") // "template" | "ai" | "user"
+  category     String?  // "moat" | "supply_chain" | "financials" | "risk" | "catalyst" | "management" | "customers" | "manufacturing" | "ip" | "regulatory" | "labor" | "rd" | "capex" | "insiders" | "valuation" | "general"
+  status       String   @default("open")     // "open" | "answered" | "skipped"
+  priority     Int      @default(0)
+  priorityLock Boolean  @default(false)      // true = user set manually, formula skips
+  staleReason  String?  // set when new data contradicts answer
+  staleAt      DateTime?
+  answeredAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([stockId, status])
+  @@index([stockId, priority])
 }
 
 // Persisted work queue — the single reactivity plane (ADR-0001).

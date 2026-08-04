@@ -293,10 +293,9 @@ export async function drainPendingTasks(
         notifications.push({ ticker: task.ticker, kind: task.kind, ok: true });
       }
 
-      // Chain: summarize → enqueue extract + narrative
+      // Chain: summarize → enqueue extract only (narrative is manual now)
       if (task.kind === "summarize" && task.ticker) {
         void enqueueTask({ kind: "extract", ticker: task.ticker, source: "scheduler" });
-        void enqueueTask({ kind: "narrative", ticker: task.ticker, source: "scheduler" });
       }
     } catch (e: any) {
       const msg = e?.message?.slice(0, 500) || "Unknown error";

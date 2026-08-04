@@ -2,10 +2,12 @@
  * GET/POST /api/stocks/[ticker]/annotations
  *
  * GET  — list all annotations for a stock
- * POST — create a new annotation (body: { section, text })
+ * POST — create a new annotation (body: { section?, text })
+ *         section is optional — null = freestyle reflection entry
  */
 
 import { prisma } from "@/lib/db";
+import { enqueueTask } from "@/lib/pending-tasks";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -26,8 +28,8 @@ export async function GET(
 
   const annotations = await prisma.annotation.findMany({
     where: { stockId: stock.id },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, section: true, text: true, createdAt: true, updatedAt: true },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, section: true, text: true, aiFlag: true, aiCheckedAt: true, createdAt: true, updatedAt: true },
   });
 
   return NextResponse.json(annotations);
@@ -46,11 +48,12 @@ export async function POST(
   }
 
   const body = await req.json().catch(() => ({}));
-  const { section, text } = body as { section?: string; text?: string };
+  const { section, text } = body as { section?: string | null; text?: string };
 
-  if (!section || !VALID_SECTIONS.includes(section)) {
+  // section is optional — null/absent = freestyle reflection
+  if (section && !VALID_SECTIONS.includes(section)) {
     return NextResponse.json(
-      { error: `Invalid section. Must be one of: ${VALID_SECTIONS.join(", ")}` },
+      { error: `Invalid section. Must be one of: ${VALID_SECTIONS.join(", ")} or omitted for a reflection` },
       { status: 400 }
     );
   }
@@ -61,11 +64,20 @@ export async function POST(
   const annotation = await prisma.annotation.create({
     data: {
       stockId: stock.id,
-      section,
+      section: section || null,
       text: text.trim(),
     },
-    select: { id: true, section: true, text: true, createdAt: true, updatedAt: true },
+    select: { id: true, section: true, text: true, aiFlag: true, aiCheckedAt: true, createdAt: true, updatedAt: true },
   });
+
+  // Freestyle reflection → trigger re-summarization so the executive brief
+  // picks up the new learning.
+  if (!section) {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (apiKey) {
+      await enqueueTask({ kind: "summarize", ticker: params.ticker.toUpperCase() });
+    }
+  }
 
   return NextResponse.json(annotation, { status: 201 });
 }

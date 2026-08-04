@@ -9,9 +9,13 @@ import { BUCKET_LABELS, BUCKET_COLORS, type OpportunityBucket } from "@/lib/scor
 import StockNarrative from "./knowledge-base/StockNarrative";
 import EvidenceCards from "./knowledge-base/EvidenceCards";
 import Changelog from "./knowledge-base/Changelog";
-import AnnotationsPanel from "./knowledge-base/AnnotationsPanel";
+import ReflectionLog from "./knowledge-base/ReflectionLog";
 import PeerComparison from "./knowledge-base/PeerComparison";
 import DecisionCard from "./knowledge-base/DecisionCard";
+import ResearchLog from "./knowledge-base/ResearchLog";
+import RecentFiles from "./knowledge-base/RecentFiles";
+import FileManager from "./knowledge-base/FileManager";
+import ResearchReport from "./knowledge-base/ExecutiveBrief";
 
 // ── Types ──
 
@@ -22,6 +26,8 @@ interface StockData {
   sector: string | null;
   summary: string | null;
   narrative: string | null;
+  synthesis: string | null;
+  lastSynthesisAt: string | null;
   lastSummaryAt: string | null;
   currentPrice: number | null;
   currency: string | null;
@@ -37,6 +43,148 @@ interface StockData {
   claims: { id: number; text: string; status: string; evidence: string | null; researchStatus: string; createdAt: string }[];
   decision?: { maturity: string; action: string | null; reasoning: string | null } | null;
   _count?: { files: number; notes: number; claims: number };
+}
+
+// ── Notes Tab (composer + list) ──
+
+function NotesTab({
+  ticker,
+  notes,
+  onRefresh,
+}: {
+  ticker: string;
+  notes: { id: number; title: string | null; content: string; tag: string | null; createdAt: string }[];
+  onRefresh: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState("");
+  const [tag, setTag] = useState("");
+  const [content, setContent] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Collect existing tags for datalist
+  const existingTags = Array.from(new Set(notes.map((n) => n.tag).filter((t): t is string => !!t)));
+
+  async function handleSave() {
+    if (!content.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/stocks/${ticker}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim() || null,
+          content: content.trim(),
+          tag: tag.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        setTitle("");
+        setTag("");
+        setContent("");
+        setAdding(false);
+        onRefresh();
+      }
+    } catch {/* silent */} finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Delete this note?")) return;
+    await fetch(`/api/stocks/${ticker}/notes/${id}`, { method: "DELETE" });
+    onRefresh();
+  }
+
+  return (
+    <div className="p-4 max-h-96 overflow-y-auto space-y-2">
+      {/* Add button */}
+      {!adding && (
+        <button
+          onClick={() => setAdding(true)}
+          className="text-xs text-accent hover:text-fg transition"
+        >
+          ＋ Add Note
+        </button>
+      )}
+
+      {/* Composer */}
+      {adding && (
+        <div className="p-3 bg-bg border border-accent/30 rounded-lg space-y-2 mb-2">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Title (optional)"
+            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-xs text-fg placeholder-muted/40"
+          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={tag}
+              onChange={(e) => setTag(e.target.value)}
+              placeholder="Tag (optional)"
+              list="note-tags"
+              className="flex-1 bg-surface border border-border rounded px-2 py-1.5 text-xs text-fg placeholder-muted/40"
+            />
+            <datalist id="note-tags">
+              {existingTags.map((t) => (
+                <option key={t!} value={t!} />
+              ))}
+            </datalist>
+          </div>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Write your note..."
+            className="w-full bg-surface border border-border rounded px-3 py-2 text-xs text-fg placeholder-muted/40 resize-y min-h-[60px]"
+            rows={3}
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSave}
+              disabled={saving || !content.trim()}
+              className="text-xs bg-accent text-bg px-3 py-1.5 rounded-lg hover:opacity-90 transition disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button
+              onClick={() => setAdding(false)}
+              className="text-xs text-muted hover:text-fg transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Note list */}
+      {notes.length === 0 && !adding ? (
+        <p className="text-xs text-muted text-center py-4">No notes yet.</p>
+      ) : (
+        notes.map((n) => (
+          <div key={n.id} className="group border border-border rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 mb-1">
+              {n.title && <span className="text-xs font-medium text-fg">{n.title}</span>}
+              {n.tag && (
+                <span className="text-[10px] border border-border rounded-full px-1.5 py-0.5 text-muted">
+                  {n.tag}
+                </span>
+              )}
+              <span className="text-[10px] text-muted/50 ml-auto">{timeAgo(n.createdAt)}</span>
+              <button
+                onClick={() => handleDelete(n.id)}
+                className="text-[10px] text-red-400/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-fg/70 leading-relaxed line-clamp-3">{n.content}</p>
+          </div>
+        ))
+      )}
+    </div>
+  );
 }
 
 // ── Page ──
@@ -170,18 +318,14 @@ export default function StockKBPage() {
             </div>
           </div>
 
-          {/* Summarize button */}
+          {/* Summarize button — always available */}
           <button
             onClick={handleSummarize}
-            disabled={summarizing || !needsSummary}
-            className={`text-xs px-3 py-2 rounded-lg transition ${
-              needsSummary
-                ? "bg-accent text-bg hover:opacity-90"
-                : "border border-border text-muted cursor-not-allowed"
-            }`}
-            title={needsSummary ? "New data available — refresh analysis" : "Analysis is up to date"}
+            disabled={summarizing}
+            className="text-xs px-3 py-2 rounded-lg transition bg-accent text-bg hover:opacity-90 disabled:opacity-50"
+            title="Re-analyze with all current data — claims, documents, Q&A, reflections"
           >
-            {summarizing ? "Analyzing..." : needsSummary ? "🔄 Refresh analysis" : "✓ Up to date"}
+            {summarizing ? "Analyzing..." : "🔄 Refresh analysis"}
           </button>
         </div>
 
@@ -193,6 +337,15 @@ export default function StockKBPage() {
         )}
       </div>
 
+      {/* ── Research Report (Executive Brief + Analyst Report) ── */}
+      <ResearchReport
+        synthesis={stock.synthesis}
+        lastSynthesisAt={stock.lastSynthesisAt}
+        summary={stock.summary}
+        lastSummaryAt={stock.lastSummaryAt}
+        needsUpdate={needsSummary}
+      />
+
       {/* ── Story Hero ── */}
       <div className="mb-6">
         <StockNarrative
@@ -201,6 +354,9 @@ export default function StockKBPage() {
           onSave={handleSaveNarrative}
         />
       </div>
+
+      {/* ── Research Log ── */}
+      <ResearchLog ticker={ticker} />
 
       {/* ── Evidence Cards ── */}
       {stock.claimCounts && (
@@ -224,9 +380,17 @@ export default function StockKBPage() {
         </div>
       )}
 
-      {/* ── Annotations + Peer Comparison (side-by-side on wide screens) ── */}
+      {/* ── Recent Files ── */}
+      <div className="mb-6">
+        <RecentFiles
+          ticker={ticker}
+          onOpenManager={() => setActiveSection("documents")}
+        />
+      </div>
+
+      {/* ── Reflection Log + Peer Comparison (side-by-side on wide screens) ── */}
       <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <AnnotationsPanel ticker={ticker} />
+        <ReflectionLog ticker={ticker} />
         <PeerComparison ticker={ticker} />
       </div>
 
@@ -242,7 +406,6 @@ export default function StockKBPage() {
             { key: "claims", label: "Claims", count: stock.claimCounts?.total },
             { key: "documents", label: "Documents", count: stock._count?.files ?? stock.files.length },
             { key: "notes", label: "Notes", count: stock._count?.notes ?? stock.notes.length },
-            { key: "summary", label: "Raw Summary", count: undefined },
           ].map(({ key, label, count }) => (
             <button
               key={key}
@@ -309,75 +472,13 @@ export default function StockKBPage() {
         )}
 
         {/* Documents section */}
-        {activeSection === "documents" && (
-          <div className="p-4 max-h-96 overflow-y-auto space-y-2">
-            {stock.files.length === 0 ? (
-              <p className="text-xs text-muted text-center py-4">
-                No documents uploaded.{" "}
-                <Link href={`/stocks/${ticker}?tab=files`} className="text-accent hover:underline">
-                  Upload one →
-                </Link>
-              </p>
-            ) : (
-              stock.files.map((f) => (
-                <div
-                  key={f.id}
-                  className="flex items-center gap-3 text-xs border border-border rounded-lg px-3 py-2"
-                >
-                  <span className="text-muted">📄</span>
-                  <span className="text-fg/80 truncate flex-1">{f.originalName}</span>
-                  <span className="text-muted/50">{f.fileType}</span>
-                  <span className="text-muted/50">{timeAgo(f.createdAt)}</span>
-                </div>
-              ))
-            )}
-          </div>
-        )}
+        {activeSection === "documents" && <FileManager ticker={ticker} />}
 
         {/* Notes section */}
         {activeSection === "notes" && (
-          <div className="p-4 max-h-96 overflow-y-auto space-y-2">
-            {stock.notes.length === 0 ? (
-              <p className="text-xs text-muted text-center py-4">
-                No notes yet.{" "}
-                <Link href={`/stocks/${ticker}?tab=notes`} className="text-accent hover:underline">
-                  Add one →
-                </Link>
-              </p>
-            ) : (
-              stock.notes.map((n) => (
-                <div
-                  key={n.id}
-                  className="border border-border rounded-lg px-3 py-2"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    {n.title && <span className="text-xs font-medium text-fg">{n.title}</span>}
-                    {n.tag && (
-                      <span className="text-[10px] border border-border rounded-full px-1.5 py-0.5 text-muted">
-                        {n.tag}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-muted/50 ml-auto">{timeAgo(n.createdAt)}</span>
-                  </div>
-                  <p className="text-xs text-fg/70 leading-relaxed line-clamp-3">{n.content}</p>
-                </div>
-              ))
-            )}
-          </div>
+          <NotesTab ticker={ticker} notes={stock.notes} onRefresh={load} />
         )}
 
-        {/* Raw Summary section */}
-        {activeSection === "summary" && (
-          <div className="p-4 max-h-96 overflow-y-auto">
-            {stock.summary ? (
-              <div className="prose prose-invert prose-xs max-w-none text-muted">
-                <ReactMarkdown>{stock.summary}</ReactMarkdown>
-              </div>
-            ) : (
-              <p className="text-xs text-muted text-center py-4">No summary yet.</p>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
