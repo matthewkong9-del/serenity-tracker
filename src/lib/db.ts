@@ -25,6 +25,12 @@ export function parseStance(summary: string | null): Stance {
     : null;
 }
 
+export function parseConfidence(summary: string | null): number | null {
+  if (!summary) return null;
+  const match = summary.match(/\*\*Confidence:?\*\*\s*(\d)\/5/i);
+  return match ? parseInt(match[1]) : null;
+}
+
 export const STANCE_COLORS: Record<NonNullable<Stance>, string> = {
   Bullish: "text-green-400 border-green-400/30 bg-green-400/10",
   Bearish: "text-red-400 border-red-400/30 bg-red-400/10",

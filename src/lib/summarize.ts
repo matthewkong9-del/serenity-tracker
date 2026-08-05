@@ -313,42 +313,53 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
 }
 
 // ── Executive Brief Synthesis ──────────────────────────────────────────────
-// Generates a compact, scannable executive summary from ALL sources:
-// claims, documents, notes, Q&A answers, reflections, relationships.
-// Designed to be read in 30 seconds — the "at a glance" state of research.
+// Generates a compact, decision-oriented brief from ALL sources: claims,
+// documents, notes, Q&A answers, reflections, relationships.
+// Read in 30 seconds — frames the DECISION, not the analysis. The full
+// analysis lives separately in Stock.summary; this brief must NOT mirror
+// its structure (no supply chain sections, no evidence quality table).
+// Instead: thesis, bull/bear case, and falsifiable triggers to watch.
 
-const SYNTHESIS_PROMPT = `You are writing an executive brief for an investor who needs to understand a stock in 30 seconds.
+const SYNTHESIS_PROMPT = `You are writing an executive brief for an investor deciding whether to act on a stock. This is NOT the full analysis — that exists separately. Your brief frames the DECISION: what to do with this research.
 
-Synthesize ALL available sources into a tight, scannable summary. The investor has already done their own research — include their Q&A findings and reflections.
+The investor has done their own research (Q&A answers, reflections). Treat that as HIGH reliability — it outweighs tweets.
 
-SOURCES:
-- Tweets & Claims (with verification status)
-- Uploaded Documents (annual reports, filings, articles)
-- User's Research Q&A (their own findings — HIGH reliability)
-- User's Reflections (what they've learned)
-- Relationships (supply chain map)
+SOURCES (by reliability):
+- User's Research Q&A answers + reflections = HIGH reliability
+- Uploaded Documents = HIGH reliability
+- Claims with verification status = medium reliability
+- Tweets (Serenity) = LOW reliability — hypotheses, not facts
+- Relationships = supply chain map
 
 RULES:
-- Be brief. This is not the full analysis — it's the headline version.
-- Every claim MUST cite its source type: "(from Q3 filing)", "(your research)", "(verified claim)", "(unverified)"
-- If the user has answered research questions, treat those as HIGH reliability.
-- If sources disagree, note the conflict.
-- Mention what's MISSING — the biggest gap in the research.
+- Be brief. 30 seconds to read. No paragraphs — bullets only.
+- Every bullet MUST cite its source type: "(verified claim)", "(your research)", "(Q3 filing)", "(unverified tweet)".
+- Bull Case and Bear Case must NOT be the same point inverted — give the strongest point of EACH side.
+- "What Would Change My Mind" is the most important section: specific, FALSIFIABLE triggers — an event, a number, a date. Never vague.
+- If sources conflict, say so in one clause.
+- If a previous brief exists, focus "What's New" on the actual delta; don't re-list old evidence.
 
 OUTPUT FORMAT (use exactly this structure):
 
 **Stance:** 🟢 Bullish / 🔴 Bearish / 🟡 Neutral
 **Confidence:** X/5
+
 **Thesis:** One sentence — the core investment case.
 
-**Key Evidence:**
-- [source type] Fact or finding (2-4 bullets max)
+**Bull Case:**
+- Strongest reasons to own this (2-3 bullets)
+
+**Bear Case:**
+- Strongest reasons to avoid or hedge (2-3 bullets)
+
+**What Would Change My Mind:**
+- Falsifiable triggers that would flip the thesis (2-3 bullets)
 
 **What's New:**
-- What changed since the last analysis? New answers? New documents? (1-2 bullets)
+- What changed since the last brief (1-2 bullets). If nothing notable: "No material change."
 
 **Biggest Gap:**
-- What do we still need to know? (1 bullet)
+- The single most important unknown (1 bullet)
 
 **Research Progress:**
 - X questions answered, Y reflections written`;
@@ -460,12 +471,20 @@ export async function generateSynthesis(
     const questionStats = `${answered.length}/${stock.questions.length} questions answered`;
     const reflectionCount = `${stock.annotations.length} reflections`;
 
+    // Pass the previous brief so "What's New" is a real delta, not a repeat.
+    const prevSynthesis = stock.synthesis;
+
     const synthesis = await chat(
       [
         { role: "system", content: SYNTHESIS_PROMPT },
         {
           role: "user",
-          content: `Ticker: $${ticker}\n${questionStats}, ${reflectionCount}\n\nRESEARCH DATA:\n\n${context.slice(0, 12000)}`,
+          content:
+            `Ticker: $${ticker}\n${questionStats}, ${reflectionCount}\n\n` +
+            (prevSynthesis
+              ? `PREVIOUS BRIEF (compare for "What's New"):\n${prevSynthesis.slice(0, 3000)}\n\n`
+              : "") +
+            `RESEARCH DATA:\n\n${context.slice(0, 12000)}`,
         },
       ],
       apiKey,

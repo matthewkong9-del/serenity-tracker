@@ -1,7 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
-import { timeAgo, parseStance, STANCE_COLORS } from "@/lib/db";
+import { timeAgo, parseStance, parseConfidence, STANCE_COLORS } from "@/lib/db";
 
 interface Props {
   synthesis: string | null;
@@ -22,6 +23,24 @@ export default function ExecutiveBrief({
   needsUpdate,
 }: Props) {
   const stance = synthesis ? parseStance(synthesis) : null;
+  const confidence = synthesis ? parseConfidence(synthesis) : null;
+
+  // Strip the leading **Stance:**/**Confidence:** lines — those are rendered
+  // as header badges above. Keeps the brief body from echoing the Analyst
+  // Report's opening lines.
+  const body = useMemo(() => {
+    if (!synthesis) return null;
+    const cleaned = synthesis
+      .split("\n")
+      .filter(
+        (l) =>
+          !/^\*\*(?:Current )?Stance:?\*\*/.test(l) &&
+          !/^\*\*Confidence:?\*\*/.test(l)
+      )
+      .join("\n")
+      .trim();
+    return cleaned || null;
+  }, [synthesis]);
 
   return (
     <div className="bg-surface border border-border rounded-xl border-l-2 border-l-accent/50 overflow-hidden">
@@ -36,6 +55,11 @@ export default function ExecutiveBrief({
               }`}
             >
               {stance}
+            </span>
+          )}
+          {confidence !== null && (
+            <span className="text-[10px] border rounded-full px-2 py-0.5 text-muted border-border">
+              Confidence {confidence}/5
             </span>
           )}
         </div>
@@ -61,7 +85,7 @@ export default function ExecutiveBrief({
       </p>
 
       {/* ── Brief body ── */}
-      {synthesis ? (
+      {body ? (
         <div className="px-5 py-4">
           <div
             className="prose prose-invert prose-sm max-w-none
@@ -73,7 +97,7 @@ export default function ExecutiveBrief({
               prose-a:text-accent prose-a:underline
             "
           >
-            <ReactMarkdown>{synthesis}</ReactMarkdown>
+            <ReactMarkdown>{body}</ReactMarkdown>
           </div>
         </div>
       ) : (
