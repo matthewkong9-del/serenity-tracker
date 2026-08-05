@@ -346,6 +346,8 @@ export default function StockKBPage() {
           synthesis={stock.synthesis}
           lastSynthesisAt={stock.lastSynthesisAt}
           needsUpdate={needsSummary}
+          ticker={ticker}
+          onRefresh={load}
         />
       </div>
 

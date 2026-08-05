@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { timeAgo, parseStance, parseConfidence, STANCE_COLORS } from "@/lib/db";
 
@@ -8,6 +8,8 @@ interface Props {
   synthesis: string | null;
   lastSynthesisAt: string | null;
   needsUpdate: boolean;
+  ticker: string;
+  onRefresh: () => void;
 }
 
 /**
@@ -21,9 +23,22 @@ export default function ExecutiveBrief({
   synthesis,
   lastSynthesisAt,
   needsUpdate,
+  ticker,
+  onRefresh,
 }: Props) {
+  const [generating, setGenerating] = useState(false);
   const stance = synthesis ? parseStance(synthesis) : null;
   const confidence = synthesis ? parseConfidence(synthesis) : null;
+
+  async function handleGenerate() {
+    setGenerating(true);
+    try {
+      const res = await fetch(`/api/stocks/${ticker}/brief`, { method: "POST" });
+      if (res.ok) onRefresh();
+    } catch {/* silent */} finally {
+      setGenerating(false);
+    }
+  }
 
   // Strip the leading **Stance:**/**Confidence:** lines — those are rendered
   // as header badges above. Keeps the brief body from echoing the Analyst
@@ -75,6 +90,16 @@ export default function ExecutiveBrief({
               ? `Updated ${timeAgo(lastSynthesisAt)}`
               : ""}
           </span>
+          {synthesis && (
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="text-xs text-muted hover:text-fg border border-border rounded-lg px-2 py-1 bg-bg/50 transition disabled:opacity-50"
+              title="Regenerate brief from latest research"
+            >
+              {generating ? "⏳" : "♻️"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -101,10 +126,17 @@ export default function ExecutiveBrief({
           </div>
         </div>
       ) : (
-        <div className="px-5 py-4">
-          <p className="text-xs text-muted">
-            No executive brief yet. Run a summary refresh to generate one from all your research.
+        <div className="px-5 py-6 text-center">
+          <p className="text-xs text-muted mb-3">
+            No executive brief yet. Generate one from your research on demand.
           </p>
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="text-xs border border-border text-muted hover:text-fg px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+          >
+            {generating ? "Generating..." : "✨ Generate brief"}
+          </button>
         </div>
       )}
     </div>
