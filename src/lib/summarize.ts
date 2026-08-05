@@ -14,7 +14,11 @@ Serenity's methodology (follow this):
 4. Look for asymmetric setups — small/mid-cap with hyperscaler exposure, ignored by market
 5. Stress-test ruthlessly — what kills this thesis?
 
-Be CONCISE. Short bullets. No paragraphs over 3 lines.
+VOICE:
+- Plain language, short sentences. Numbers over adjectives ("$350B pipeline", not "massive demand").
+- No filler words: very, huge, significant, crucial.
+- Vary how bullets start — no two bullets should open the same way.
+- One idea per bullet. If a point is weak, say it's weak — don't pad.
 
 Data sources (by reliability):
 - [TWEETS] = Serenity's speculation (LOW reliability — treat as hypotheses to test)
@@ -41,12 +45,7 @@ FORMAT:
 - What does $${ticker} control that others NEED?
 - Sole supplier of anything? High barriers to entry? Limited substitutes?
 - Evidence quality: which claims are verified vs speculative?
-- Chokepoint depth rating explanation (1-5):
-  5 = irreplaceable sole-source, critical to entire supply chain, no substitutes
-  4 = near-sole-source, very high barriers, limited substitutes
-  3 = strong position but alternatives exist, moderate barriers
-  2 = competitive but differentiated, some moat
-  1 = commodity player, easily substituted, low barriers
+- End with the depth rating (1-5, see rubric below).
 
 ## Demand Certainty
 - Is the demand real and growing? What physical evidence?
@@ -69,10 +68,14 @@ FORMAT:
 - Biggest gap: what do we NEED to know but DON'T?
 
 ## Verdict
-**Stance:** 🟢 Bullish / 🔴 Bearish / 🟡 Neutral
-**Confidence:** X/5
-**Chokepoint Depth:** X/5
-**Bottom Line:** 1-2 sentences. What's proven vs what's speculation.`;
+**Bottom Line:** 1-2 sentences. What's proven vs what's speculation.
+
+DEPTH RUBRIC (for rating only — never print this in the output):
+5 = irreplaceable sole-source, critical to entire supply chain, no substitutes
+4 = near-sole-source, very high barriers, limited substitutes
+3 = strong position but alternatives exist, moderate barriers
+2 = competitive but differentiated, some moat
+1 = commodity player, easily substituted, low barriers`;
 
 // ── Chokepoint depth parser ────────────────────────────────────────────────
 // Extracts "**Chokepoint Depth:** X/5" or "Chokepoint Depth: X/5" from summary text.
@@ -251,7 +254,10 @@ export async function summarizeStock(ticker: string, apiKey: string): Promise<st
     const summaryText = await chat(
       [
         { role: "system", content: SYSTEM_PROMPT(ticker) },
-        { role: "user", content: `DATA TO ANALYZE:\n\n${context}` },
+        {
+          role: "user",
+          content: `Today's date: ${new Date().toISOString().slice(0, 10)}\n\nDATA TO ANALYZE:\n\n${context}`,
+        },
       ],
       apiKey,
       { temperature: 0.3, purpose: "summarize", timeoutMs: 600_000 } // 10 min — full docs can be large
@@ -331,15 +337,25 @@ SOURCES (by reliability):
 - Tweets (Serenity) = LOW reliability — hypotheses, not facts
 - Relationships = supply chain map
 
+VOICE:
+- Plain language, short sentences. Numbers over adjectives ("$350B pipeline", not "massive demand").
+- No filler words: very, huge, significant, crucial.
+- Vary how bullets start — no two bullets should open the same way.
+- One idea per bullet. If a point is weak, say it's weak — don't pad.
+- Each section must add NEW information — never repeat a point made in another section.
+
 RULES:
 - Be brief. 30 seconds to read. No paragraphs — bullets only.
-- Every bullet MUST cite its source type: "(verified claim)", "(your research)", "(Q3 filing)", "(unverified tweet)".
+- The thesis is ONE sentence, max 20 words — one breath, punchy.
+- In Bull Case and Bear Case bullets ONLY, cite the source with exactly one tag: "(verified claim)", "(unverified)", "(your research)", "(filing)", or "(supply chain map)". No other tag forms.
 - Bull Case and Bear Case must NOT be the same point inverted — give the strongest point of EACH side.
-- "What Would Change My Mind" is the most important section: specific, FALSIFIABLE triggers — an event, a number, a date. Never vague.
+- "What Would Change My Mind" is the most important section: specific, FALSIFIABLE triggers — an event, a number, a date. Never vague. Any date must be TODAY or later — never reference a past date as upcoming.
 - If sources conflict, say so in one clause.
 - If a previous brief exists, focus "What's New" on the actual delta; don't re-list old evidence.
 
 OUTPUT FORMAT (use exactly this structure):
+
+**As of [today's date]**
 
 **Stance:** 🟢 Bullish / 🔴 Bearish / 🟡 Neutral
 **Confidence:** X/5
@@ -347,10 +363,10 @@ OUTPUT FORMAT (use exactly this structure):
 **Thesis:** One sentence — the core investment case.
 
 **Bull Case:**
-- Strongest reasons to own this (2-3 bullets)
+- Strongest reasons to own this (2-3 bullets, each ending with a source tag)
 
 **Bear Case:**
-- Strongest reasons to avoid or hedge (2-3 bullets)
+- Strongest reasons to avoid or hedge (2-3 bullets, each ending with a source tag)
 
 **What Would Change My Mind:**
 - Falsifiable triggers that would flip the thesis (2-3 bullets)
@@ -480,7 +496,7 @@ export async function generateSynthesis(
         {
           role: "user",
           content:
-            `Ticker: $${ticker}\n${questionStats}, ${reflectionCount}\n\n` +
+            `Ticker: $${ticker}\nToday's date: ${new Date().toISOString().slice(0, 10)}\n${questionStats}, ${reflectionCount}\n\n` +
             (prevSynthesis
               ? `PREVIOUS BRIEF (compare for "What's New"):\n${prevSynthesis.slice(0, 3000)}\n\n`
               : "") +
