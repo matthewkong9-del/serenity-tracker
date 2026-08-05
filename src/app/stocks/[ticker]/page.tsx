@@ -15,7 +15,8 @@ import DecisionCard from "./knowledge-base/DecisionCard";
 import ResearchLog from "./knowledge-base/ResearchLog";
 import RecentFiles from "./knowledge-base/RecentFiles";
 import FileManager from "./knowledge-base/FileManager";
-import ResearchReport from "./knowledge-base/ExecutiveBrief";
+import ExecutiveBrief from "./knowledge-base/ExecutiveBrief";
+import AnalystReport from "./knowledge-base/AnalystReport";
 
 // ── Types ──
 
@@ -337,21 +338,31 @@ export default function StockKBPage() {
         )}
       </div>
 
-      {/* ── Research Report (Executive Brief + Analyst Report) ── */}
-      <ResearchReport
-        synthesis={stock.synthesis}
-        lastSynthesisAt={stock.lastSynthesisAt}
-        summary={stock.summary}
-        lastSummaryAt={stock.lastSummaryAt}
-        needsUpdate={needsSummary}
-      />
+      {/* ── Reading tiers, top to bottom: Scan → Read → Study ── */}
 
-      {/* ── Story Hero ── */}
+      {/* ── Executive Brief (scan) ── */}
+      <div className="mb-6">
+        <ExecutiveBrief
+          synthesis={stock.synthesis}
+          lastSynthesisAt={stock.lastSynthesisAt}
+          needsUpdate={needsSummary}
+        />
+      </div>
+
+      {/* ── Story Hero (read) ── */}
       <div className="mb-6">
         <StockNarrative
           narrative={stock.narrative}
           ticker={ticker}
           onSave={handleSaveNarrative}
+        />
+      </div>
+
+      {/* ── Analyst Report (study) ── */}
+      <div className="mb-6">
+        <AnalystReport
+          summary={stock.summary}
+          lastSummaryAt={stock.lastSummaryAt}
         />
       </div>
 

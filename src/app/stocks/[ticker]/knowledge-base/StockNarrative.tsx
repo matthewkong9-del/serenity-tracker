@@ -85,6 +85,23 @@ function parseSections(narrative: string): Section[] {
   return sections;
 }
 
+// ── Section header (title + description, shared across states) ──
+
+function SectionHeader({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between px-5 py-3 border-b border-border/50">
+      <div>
+        <span className="text-sm font-semibold text-fg">📖 Story Hero</span>
+        <p className="text-[10px] text-muted/50 mt-0.5 leading-relaxed">
+          The narrative — how this stock&apos;s story and thesis developed. The
+          3-minute read.
+        </p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 // ── Component ──
 
 export default function StockNarrative({ narrative, ticker, onSave }: Props) {
@@ -113,84 +130,92 @@ export default function StockNarrative({ narrative, ticker, onSave }: Props) {
 
   if (!narrative && !editing) {
     return (
-      <div className="bg-surface border border-border rounded-xl p-8 text-center">
-        <p className="text-muted text-sm mb-2">No narrative story yet</p>
-        <p className="text-muted/50 text-xs mb-3">
-          Run a summary first, then generate the story.
-        </p>
-        <button
-          onClick={handleRegenerate}
-          disabled={regenerating}
-          className="text-xs border border-border text-muted hover:text-fg px-3 py-1.5 rounded-lg transition disabled:opacity-50"
-        >
-          {regenerating ? "Generating..." : "📖 Generate story"}
-        </button>
-      </div>
-    );
-  }
-
-  if (editing) {
-    return (
-      <div className="bg-surface border border-border rounded-xl p-6">
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          className="w-full bg-bg border border-border rounded-lg p-4 text-sm text-fg leading-relaxed min-h-[400px] resize-y font-mono"
-          placeholder="Write the story..."
-          autoFocus
-        />
-        <div className="flex items-center gap-2 mt-3">
+      <div className="bg-surface border border-border rounded-xl border-l-2 border-l-green-400/40 overflow-hidden">
+        <SectionHeader />
+        <div className="p-8 text-center">
+          <p className="text-muted text-sm mb-2">No narrative story yet</p>
+          <p className="text-muted/50 text-xs mb-3">
+            Run a summary first, then generate the story.
+          </p>
           <button
-            onClick={async () => {
-              setSaving(true);
-              await onSave(draft);
-              setSaving(false);
-              setEditing(false);
-            }}
-            disabled={saving}
-            className="text-xs bg-accent text-bg px-3 py-2 rounded-lg hover:opacity-90 transition disabled:opacity-50"
+            onClick={handleRegenerate}
+            disabled={regenerating}
+            className="text-xs border border-border text-muted hover:text-fg px-3 py-1.5 rounded-lg transition disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Save"}
-          </button>
-          <button
-            onClick={() => {
-              setDraft(narrative || "");
-              setEditing(false);
-            }}
-            className="text-xs text-muted hover:text-fg px-3 py-2 rounded-lg transition"
-          >
-            Cancel
+            {regenerating ? "Generating..." : "📖 Generate story"}
           </button>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="relative group">
-      {/* Edit + Regenerate buttons — float above all cards */}
-      <div className="absolute -top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
-        <button
-          onClick={handleRegenerate}
-          disabled={regenerating}
-          className="text-xs text-muted hover:text-fg border border-border rounded-lg px-2 py-1 bg-surface shadow-sm disabled:opacity-50"
-          title="Regenerate story from latest analyst report"
-        >
-          {regenerating ? "⏳" : "📖"}
-        </button>
-        <button
-          onClick={() => {
-            setDraft(narrative || "");
-            setEditing(true);
-          }}
-          className="text-xs text-muted hover:text-fg border border-border rounded-lg px-2 py-1 bg-surface shadow-sm"
-        >
-          ✏️ Edit
-        </button>
+  if (editing) {
+    return (
+      <div className="bg-surface border border-border rounded-xl border-l-2 border-l-green-400/40 overflow-hidden">
+        <SectionHeader />
+        <div className="p-6">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="w-full bg-bg border border-border rounded-lg p-4 text-sm text-fg leading-relaxed min-h-[400px] resize-y font-mono"
+            placeholder="Write the story..."
+            autoFocus
+          />
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={async () => {
+                setSaving(true);
+                await onSave(draft);
+                setSaving(false);
+                setEditing(false);
+              }}
+              disabled={saving}
+              className="text-xs bg-accent text-bg px-3 py-2 rounded-lg hover:opacity-90 transition disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button
+              onClick={() => {
+                setDraft(narrative || "");
+                setEditing(false);
+              }}
+              className="text-xs text-muted hover:text-fg px-3 py-2 rounded-lg transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="bg-surface border border-border rounded-xl border-l-2 border-l-green-400/40 overflow-hidden">
+      {/* ── Header with regenerate + edit actions ── */}
+      <SectionHeader>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleRegenerate}
+            disabled={regenerating}
+            className="text-xs text-muted hover:text-fg border border-border rounded-lg px-2 py-1 bg-bg/50 transition disabled:opacity-50"
+            title="Regenerate story from latest analyst report"
+          >
+            {regenerating ? "⏳" : "📖"}
+          </button>
+          <button
+            onClick={() => {
+              setDraft(narrative || "");
+              setEditing(true);
+            }}
+            className="text-xs text-muted hover:text-fg border border-border rounded-lg px-2 py-1 bg-bg/50 transition"
+          >
+            ✏️ Edit
+          </button>
+        </div>
+      </SectionHeader>
 
       {/* Section cards */}
-      <div className="space-y-3">
+      <div className="p-5 space-y-3">
         {sections.map((section, i) => (
           <div
             key={i}
