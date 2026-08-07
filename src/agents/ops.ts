@@ -90,6 +90,7 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
         claimId: c.id,
         ticker: c.stock.ticker,
         source: "scheduler",
+        depth: "deep",
       });
     }
     if (orphans.length > 0) {

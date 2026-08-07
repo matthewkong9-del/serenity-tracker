@@ -126,6 +126,7 @@ async function runStaleResearch(): Promise<string[]> {
       claimId: c.id,
       ticker: c.stock.ticker,
       source: "scheduler",
+      depth: "deep",
     });
   }
 
@@ -162,6 +163,7 @@ async function runQualityReview(apiKey: string): Promise<string[]> {
         claimId: c.id,
         ticker: c.stock.ticker,
         source: "scheduler",
+        depth: "deep",
       });
     }
   } else {

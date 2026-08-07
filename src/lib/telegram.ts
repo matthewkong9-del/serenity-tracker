@@ -244,7 +244,7 @@ export function parseResearchCommand(
   if (trimmed === "research all" || trimmed === "all") {
     return {
       claimIds: pendingClaims.map((c) => c.claimId),
-      depth: "quick",
+      depth: "deep",
       action: "research",
     };
   }
@@ -272,7 +272,7 @@ export function parseResearchCommand(
   if (rest === "all") {
     return {
       claimIds: pendingClaims.map((c) => c.claimId),
-      depth: "quick",
+      depth: "deep",
       action: "research",
     };
   }
@@ -282,5 +282,7 @@ export function parseResearchCommand(
     .map((idx) => pendingClaims.find((c) => c.index === idx)?.claimId)
     .filter(Boolean) as number[];
 
-  return { claimIds, depth: "quick", action: claimIds.length > 0 ? "research" : "skip" };
+  // Deep is the default research mode — plain "research N" runs the
+  // adversarial 2-pass; the "deep" prefix is kept for explicitness.
+  return { claimIds, depth: "deep", action: claimIds.length > 0 ? "research" : "skip" };
 }

@@ -226,6 +226,7 @@ model PendingTask {
   ticker    String?
   claimId   Int?
   source    String?  // "telegram" | "scheduler" | "manual" — who asked for this work
+  depth     String?  // research tasks: "quick" | "deep" (adversarial 2-pass)
   status    String   @default("pending") // "pending" | "claimed" | "done" | "dead"
   attempts  Int      @default(0)
   dueAt     DateTime @default(now())

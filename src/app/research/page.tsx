@@ -46,6 +46,10 @@ export default function ResearchPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimIds: ids }),
       });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Server returned ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+      }
       const data = await res.json();
       setResult(`Researched ${data.researched}, ${data.failed || 0} failed. ${data.remaining} remaining.`);
       load();
@@ -77,7 +81,7 @@ export default function ResearchPage() {
             disabled={researching}
             className="px-4 py-2 bg-accent text-black text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
-            {researching ? "Researching…" : `Research ${claims.length} claim(s)`}
+            {researching ? "Researching…" : `Deep research ${claims.length} claim(s)`}
           </button>
         )}
       </div>

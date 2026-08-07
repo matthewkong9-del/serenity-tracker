@@ -35,6 +35,7 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
         claimId: c.id,
         ticker: c.stock.ticker,
         source: "scheduler",
+        depth: "deep",
       });
     }
     fixes.push(`Enqueued deep research for ${disputedClaims.length} disputed claims`);
@@ -58,6 +59,7 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
         claimId: c.id,
         ticker: c.stock.ticker,
         source: "scheduler",
+        depth: "deep",
       });
     }
     fixes.push(`Enqueued re-research for ${lowConfClaims.length} low-confidence verdicts`);

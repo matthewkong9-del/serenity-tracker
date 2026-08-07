@@ -56,7 +56,8 @@ export async function GET(req: NextRequest) {
   ]);
 
   const [pending, done, researching, failed] = counts;
-  const estimatedCost = (pending * 0.007).toFixed(2);
+  // Deep research ≈ 2 verdict passes + 2× search per claim (deep is the default)
+  const estimatedCost = (pending * 0.014).toFixed(2);
 
   return NextResponse.json({
     claims,
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { claimIds, limit = 10 } = body;
+  const { claimIds, limit = 10, depth = "deep" } = body;
 
   let claims: { id: number; stock: { ticker: string } }[];
 
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
       const c = queue.shift();
       if (!c) break;
       try {
-        await researchClaim(c.id, c.stock.ticker, apiKey!);
+        await researchClaim(c.id, c.stock.ticker, apiKey!, depth as any);
         researched++;
       } catch (e: any) {
         console.error(`[research] claim #${c.id} failed: ${e.message}`);

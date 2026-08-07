@@ -26,6 +26,8 @@ export interface EnqueueInput {
   ticker?: string;
   claimId?: number;
   source?: TaskSource;
+  /** Research depth — "deep" runs an adversarial 2-pass (confirm + refute). */
+  depth?: "quick" | "deep";
   /** When the task becomes eligible to run. Defaults to now. */
   dueAt?: Date;
 }
@@ -34,7 +36,12 @@ export interface EnqueueInput {
  *  research/summarize/etc. modules (no cycles) and lets tests pass fakes,
  *  the same way market-data.ts takes injected price sources. */
 export interface TaskHandlers {
-  research: (claimId: number, ticker: string, apiKey: string) => Promise<void>;
+  research: (
+    claimId: number,
+    ticker: string,
+    apiKey: string,
+    depth?: "quick" | "deep"
+  ) => Promise<void>;
   summarize: (ticker: string, apiKey: string) => Promise<void>;
   extract: (ticker: string, apiKey: string) => Promise<void>;
   narrative: (ticker: string, apiKey: string) => Promise<void>;
@@ -89,7 +96,12 @@ export async function enqueueTask(input: EnqueueInput): Promise<void> {
   if (existing) {
     await prisma.pendingTask.update({
       where: { id: existing.id },
-      data: { dueAt, source: input.source ?? null },
+      data: {
+        dueAt,
+        source: input.source ?? null,
+        // Don't clobber an existing depth with null (debounce on a re-queue)
+        ...(input.depth ? { depth: input.depth } : {}),
+      },
     });
     return;
   }
@@ -100,6 +112,7 @@ export async function enqueueTask(input: EnqueueInput): Promise<void> {
       ticker: input.ticker ?? null,
       claimId: input.claimId ?? null,
       source: input.source ?? null,
+      depth: input.depth ?? null,
       status: "pending",
       dueAt,
     },
@@ -181,7 +194,14 @@ export async function failTask(
 const PER_TASK_TIMEOUT_MS = 10 * 60 * 1000;
 
 async function dispatch(
-  task: { id: number; kind: string; ticker: string | null; claimId: number | null; attempts: number },
+  task: {
+    id: number;
+    kind: string;
+    ticker: string | null;
+    claimId: number | null;
+    attempts: number;
+    depth: string | null;
+  },
   apiKey: string,
   handlers: TaskHandlers
 ): Promise<void> {
@@ -193,7 +213,12 @@ async function dispatch(
         }
         // researchClaim catches its own errors and sets researchStatus="failed",
         // so it does not throw. Detect success/failure via the claim's state.
-        await handlers.research(task.claimId, task.ticker, apiKey);
+        await handlers.research(
+          task.claimId,
+          task.ticker,
+          apiKey,
+          task.depth === "deep" ? "deep" : undefined
+        );
         const claim = await prisma.claim.findUnique({
           where: { id: task.claimId },
           select: { researchStatus: true },

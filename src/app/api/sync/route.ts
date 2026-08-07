@@ -352,7 +352,12 @@ export async function POST(req: NextRequest) {
         const shouldAutoResearch =
           !telegramConfigured || (claim.impactScore ?? 3) <= 3;
         if (shouldAutoResearch) {
-          await enqueueTask({ kind: "research", claimId: claim.id, ticker: symbol });
+          await enqueueTask({
+            kind: "research",
+            claimId: claim.id,
+            ticker: symbol,
+            depth: "deep",
+          });
         }
       }
 

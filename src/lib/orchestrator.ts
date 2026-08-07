@@ -77,8 +77,8 @@ export function isSunday(): boolean {
 // ── Task handlers for the drain (injected into drainPendingTasks) ──────
 
 const taskHandlers: TaskHandlers = {
-  research: async (claimId, ticker, apiKey) => {
-    await researchClaim(claimId, ticker, apiKey, "quick");
+  research: async (claimId, ticker, apiKey, depth) => {
+    await researchClaim(claimId, ticker, apiKey, depth ?? "quick");
   },
   summarize: async (ticker, apiKey) => {
     await summarizeStock(ticker, apiKey);
@@ -200,6 +200,7 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
               claimId,
               ticker: claim.stock.ticker,
               source: "telegram",
+              depth: parsed.depth,
             });
             enqueued++;
           }
@@ -249,6 +250,7 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
         claimId: c.id,
         ticker: c.stock.ticker,
         source: "scheduler",
+        depth: "deep",
       });
     }
 
