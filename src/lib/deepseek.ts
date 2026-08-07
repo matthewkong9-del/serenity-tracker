@@ -136,7 +136,25 @@ export async function chat(
     signal: AbortSignal.timeout(options?.timeoutMs ?? 180_000),
   });
 
-  const data = await response.json();
+  const raw = await response.text();
+
+  // Guard before parsing: gateways/proxies answer 5xx with HTML pages, and a
+  // JSON.parse of HTML surfaces as a cryptic "Unexpected token '<'" — fail with
+  // the real status instead.
+  if (!response.ok) {
+    throw new Error(
+      `${provider.label} API error (HTTP ${response.status}): ${raw.slice(0, 300) || "(empty body)"}`
+    );
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      `${provider.label} returned non-JSON (HTTP ${response.status}): ${raw.slice(0, 300)}`
+    );
+  }
   if (data.error) throw new Error(data.error.message);
 
   const output = data.choices[0].message.content as string;
