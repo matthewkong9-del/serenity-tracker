@@ -7,6 +7,7 @@ export function NavBadges() {
   const [badges, setBadges] = useState<{
     unverifiedClaims: number;
     stocksWithErrors: number;
+    reviewCount: number;
   } | null>(null);
 
   useEffect(() => {
@@ -26,6 +27,14 @@ export function NavBadges() {
           className="text-xs bg-amber-400/10 text-amber-400 border border-amber-400/20 rounded-full px-2 py-0.5 hover:bg-amber-400/20 transition-colors"
         >
           {badges.unverifiedClaims} to research
+        </Link>
+      )}
+      {badges.reviewCount > 0 && (
+        <Link
+          href="/review"
+          className="text-xs bg-blue-400/10 text-blue-400 border border-blue-400/20 rounded-full px-2 py-0.5 hover:bg-blue-400/20 transition-colors"
+        >
+          {badges.reviewCount} to review
         </Link>
       )}
       {badges.stocksWithErrors > 0 && (

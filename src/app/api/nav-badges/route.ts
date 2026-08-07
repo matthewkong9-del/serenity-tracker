@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** Lightweight endpoint for nav notification badges. Cached for 30s in the browser. */
 export async function GET() {
-  const [unresearchedClaims, stocks, decisions] = await Promise.all([
+  const [unresearchedClaims, stocks, decisions, reviewCount] = await Promise.all([
     // Only count claims that haven't been researched yet — not ones already
     // researched but left "unverified" (verdict was unclear).
     prisma.claim.count({
@@ -22,6 +22,10 @@ export async function GET() {
     prisma.decision.count({
       where: { maturity: "actionable" },
     }),
+    // Claims awaiting human verdict — the /review workspace
+    prisma.claim.count({
+      where: { status: { in: ["disputed", "refuted", "unverified"] } },
+    }),
   ]);
 
   const totalClaims = await prisma.claim.count();
@@ -32,6 +36,7 @@ export async function GET() {
       stocksWithErrors: stocks,
       actionableDecisions: decisions,
       totalClaims,
+      reviewCount,
     },
     {
       headers: {

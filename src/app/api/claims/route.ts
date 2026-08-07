@@ -4,9 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
+  const statuses = searchParams.get("statuses"); // comma-separated, e.g. "disputed,refuted,unverified"
   const search = searchParams.get("search");
   const tweetId = searchParams.get("tweetId");
-  const sort = searchParams.get("sort") || "newest";
+  const sort = searchParams.get("sort") || "newest"; // "newest" | "oldest" | "impact"
   const limit = parseInt(searchParams.get("limit") || "0") || 0;
 
   const researchStatus = searchParams.get("researchStatus");
@@ -15,6 +16,9 @@ export async function GET(req: NextRequest) {
 
   if (status && status !== "all") {
     where.status = status;
+  }
+  if (statuses) {
+    where.status = { in: statuses.split(",").map((s) => s.trim()) };
   }
 
   // "pending" = claims waiting for research (pending or previously failed)
@@ -38,7 +42,10 @@ export async function GET(req: NextRequest) {
 
   const claims = await prisma.claim.findMany({
     where,
-    orderBy: { createdAt: sort === "oldest" ? "asc" : "desc" },
+    orderBy:
+      sort === "impact"
+        ? [{ impactScore: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }]
+        : { createdAt: sort === "oldest" ? "asc" : "desc" },
     ...(limit > 0 ? { take: limit } : {}),
     include: {
       stock: { select: { ticker: true, name: true } },

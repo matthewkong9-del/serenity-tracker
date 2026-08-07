@@ -30,6 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/claims" className="text-sm text-muted hover:text-fg transition">
                 Claims
               </Link>
+              <Link href="/review" className="text-sm text-muted hover:text-fg transition">
+                Review
+              </Link>
               <Link href="/research" className="text-sm text-muted hover:text-fg transition">
                 Research
               </Link>
