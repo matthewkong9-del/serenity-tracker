@@ -50,6 +50,7 @@ interface ActivityItem {
 interface StatusData {
   health: "healthy" | "warning" | "critical";
   agents: AgentCard[];
+  orchestrator: { paused: boolean };
   watchdogAlerts: WatchdogAlert[];
   recentActivity: ActivityItem[];
   summary: {
@@ -121,7 +122,7 @@ export default function AgentActivityPage() {
       const res = await fetch("/api/agents/status");
       const d: StatusData = await res.json();
       setData(d);
-      setOrchestratorPaused(d.agents.find((a) => a.key === "orchestrator")?.status === "paused");
+      setOrchestratorPaused(d.orchestrator?.paused === true);
     } catch {
       // silent
     } finally {
@@ -206,7 +207,7 @@ export default function AgentActivityPage() {
         <div>
           <h1 className="text-2xl font-bold text-fg mb-1">Agent Activity</h1>
           <p className="text-sm text-muted">
-            9 agents running ·{" "}
+            {data.agents.length} agents running ·{" "}
             {data.summary.lastOrchTick ? (
               <>last orchestration {timeAgo(data.summary.lastOrchTick)}</>
             ) : (
@@ -255,9 +256,10 @@ export default function AgentActivityPage() {
           color="text-muted"
         />
         <StatTile
-          label="Orchestrator"
+          label="Orchestrator (click to toggle)"
           value={orchestratorPaused ? "⏸️ Paused" : "▶️ Running"}
           color={orchestratorPaused ? "text-amber-400" : "text-green-400"}
+          onClick={toggleOrchestrator}
         />
       </div>
 
@@ -380,19 +382,6 @@ export default function AgentActivityPage() {
               >
                 {triggering === agent.key ? "⋯" : "▶ Run Now"}
               </button>
-              {agent.key === "orchestrator" && (
-                <button
-                  onClick={toggleOrchestrator}
-                  disabled={triggering === "orchestrator"}
-                  className={`text-[10px] font-medium border rounded-lg px-3 py-1 transition disabled:opacity-50 ${
-                    orchestratorPaused
-                      ? "text-green-400 border-green-400/30 hover:border-green-400"
-                      : "text-amber-400 border-amber-400/30 hover:border-amber-400"
-                  }`}
-                >
-                  {orchestratorPaused ? "▶ Resume" : "⏸ Pause"}
-                </button>
-              )}
             </div>
           </div>
         ))}
@@ -522,15 +511,27 @@ function StatTile({
   label,
   value,
   color,
+  onClick,
 }: {
   label: string;
   value: string;
   color: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div className="bg-surface border border-border rounded-xl p-4">
+  const inner = (
+    <>
       <div className={`text-base font-bold ${color} truncate`}>{value}</div>
       <div className="text-[10px] text-muted/50 mt-0.5">{label}</div>
-    </div>
+    </>
+  );
+  return onClick ? (
+    <button
+      onClick={onClick}
+      className="bg-surface border border-border rounded-xl p-4 text-left hover:border-accent/40 transition cursor-pointer"
+    >
+      {inner}
+    </button>
+  ) : (
+    <div className="bg-surface border border-border rounded-xl p-4">{inner}</div>
   );
 }

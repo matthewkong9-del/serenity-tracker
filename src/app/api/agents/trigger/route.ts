@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!a) {
     return NextResponse.json(
       {
-        error: `Unknown agent: ${agent}. Valid: ingest, research, analysis, price, scoring, cleanup, watchdog, ops, auditor, editor, orchestrator`,
+        error: `Unknown agent: ${agent}. Valid: ingest, research, price, cleanup, watchdog, ops, auditor, editor, decision, orchestrator`,
       },
       { status: 400 }
     );

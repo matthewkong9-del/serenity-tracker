@@ -56,7 +56,9 @@ const agent: Agent = {
   name: "Ingest",
   emoji: "📥",
   description: "Fetches tweets, extracts tickers and claims hourly",
-  stages: ["sync", "sync_ingest", "sync_extract"],
+  // Stage names must match what the sync route actually logs (PipelineRun):
+  // "ingest" = CSV fetch, "extract" = claim extraction, "triage" = Telegram prompts.
+  stages: ["ingest", "extract", "triage"],
   run,
 };
 

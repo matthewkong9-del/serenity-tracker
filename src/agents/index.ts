@@ -1,5 +1,5 @@
 /**
- * Barrel file — importing this registers all 11 agents via their
+ * Barrel file — importing this registers all agents via their
  * module-level registerAgent() calls. Consumers can then dispatch
  * through getAgent(key).run(input).
  */
@@ -12,8 +12,6 @@ import "./ingest";
 import "./price";
 import "./cleanup";
 import "./research";
-import "./analysis";
-import "./scoring";
 import "./orchestrator";
 import "./decision";
 

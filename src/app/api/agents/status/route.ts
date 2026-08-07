@@ -16,7 +16,10 @@ export const dynamic = "force-dynamic";
 
 // ── Agent definitions (from registry) ──────────────────────────────────
 
-const AGENTS: Agent[] = getAllAgents();
+// The orchestrator isn't an agent — it's the 30s tick itself (its "runs" are
+// just tick executions). Its paused/running state is exposed at the top level
+// of the response instead of as a card.
+const AGENTS: Agent[] = getAllAgents().filter((a) => a.key !== "orchestrator");
 
 /** Filter that excludes runs already handled by Ops — those were stuck runs
  *  that ops auto-cleared; they should not be re-flagged as errors. */
@@ -81,14 +84,6 @@ async function getAgentStats(stages: string[]) {
   // Agent-specific metric
   let metric: { label: string; value: string } | null = null;
 
-  // Analysis agent: stocks with summaries
-  if (stages.includes("summarize")) {
-    const count = await prisma.stock.count({
-      where: { summary: { not: null } },
-    });
-    metric = { label: "Stocks analyzed", value: String(count) };
-  }
-
   // Research agent: claims needing research + researched-but-unresolved
   if (stages.includes("research")) {
     const [needsResearch, researchedUnresolved, emptyStocks] = await Promise.all([
@@ -124,7 +119,7 @@ async function getAgentStats(stages: string[]) {
   }
 
   // Ingest agent: tweets synced
-  if (stages.includes("sync")) {
+  if (stages.includes("ingest")) {
     const tweetCount = await prisma.tweet.count();
     metric = { label: "Tweets synced", value: String(tweetCount) };
   }
@@ -183,10 +178,6 @@ async function getAgentStats(stages: string[]) {
   let currentStatus: "running" | "idle" | "error" | "paused" = "idle";
   if (running24h > 0) currentStatus = "running";
   if (failed24h > 0 && completed24h === 0) currentStatus = "error";
-  // Orchestrator: check if in-process scheduler is running
-  if (stages.includes("orchestrate") && !isSchedulerRunning()) {
-    currentStatus = "paused";
-  }
 
   return {
     status: currentStatus,
@@ -305,6 +296,8 @@ export async function GET() {
   return NextResponse.json({
     health,
     agents,
+    // The tick isn't an agent card — its pause state lives here
+    orchestrator: { paused: !isSchedulerRunning() },
     watchdogAlerts,
     recentActivity,
     deadTasks,
