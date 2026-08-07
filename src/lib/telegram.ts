@@ -131,6 +131,7 @@ export async function notifyNewTweet(
     `\`research 1 2\` — check specific claims`,
     `\`research all\` — check everything`,
     `\`deep 1\` — dig deeper on claim 1`,
+    `\`review\` — claims awaiting your verdict`,
     `\`skip\` — ignore this one`,
   ].join("\n");
 
@@ -234,11 +235,16 @@ export async function checkForOrders(): Promise<TelegramCommand[]> {
 export function parseResearchCommand(
   command: string,
   pendingClaims: { index: number; claimId: number }[]
-): { claimIds: number[]; depth: "quick" | "deep"; action: "research" | "skip" } {
+): { claimIds: number[]; depth: "quick" | "deep"; action: "research" | "skip" | "review" } {
   const trimmed = command.trim().toLowerCase();
 
   if (trimmed === "skip" || trimmed === "skip all") {
     return { claimIds: [], depth: "quick", action: "skip" };
+  }
+
+  // "review" — digest of claims awaiting a human verdict (the /review workspace)
+  if (trimmed === "review") {
+    return { claimIds: [], depth: "quick", action: "review" };
   }
 
   if (trimmed === "research all" || trimmed === "all") {

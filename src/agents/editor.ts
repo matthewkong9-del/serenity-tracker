@@ -1,7 +1,8 @@
 /**
  * Editor — fixes content quality issues found by Auditor.
  *
- *   - Deep-research disputed claims
+ *   - Disputed claims → deferred to the human /review workspace (never
+ *     auto-researched — the human is the final authority on conflicts)
  *   - Re-research low-confidence verdicts (deep mode)
  *   - Enqueue re-summarize for stale summaries
  *   - Enqueue narrative generation for missing narratives
@@ -21,24 +22,13 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
   const fixes: string[] = [];
   const flagged: string[] = [];
 
-  // 1. Deep-research disputed claims
-  const disputedClaims = await prisma.claim.findMany({
-    where: { status: "disputed", researchStatus: { not: "researching" } },
-    include: { stock: { select: { ticker: true } } },
-    take: 10,
+  // 1. Disputed claims belong to the human now — flag, don't auto-research.
+  //    The /review page is the sole workspace for their verdict.
+  const disputedClaims = await prisma.claim.count({
+    where: { status: "disputed" },
   });
-
-  if (disputedClaims.length > 0) {
-    for (const c of disputedClaims) {
-      await enqueueTask({
-        kind: "research",
-        claimId: c.id,
-        ticker: c.stock.ticker,
-        source: "scheduler",
-        depth: "deep",
-      });
-    }
-    fixes.push(`Enqueued deep research for ${disputedClaims.length} disputed claims`);
+  if (disputedClaims > 0) {
+    flagged.push(`${disputedClaims} disputed claim(s) awaiting your verdict on /review`);
   }
 
   // 2. Re-research low-confidence verdicts (deep mode detects this in the two-pass)

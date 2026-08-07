@@ -183,6 +183,64 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
           continue;
         }
 
+        if (parsed.action === "review") {
+          // Digest of claims awaiting a human verdict — points to /review.
+          // The human is the researcher; the agents never auto-resolve these.
+          const [counts, topClaims] = await Promise.all([
+            prisma.claim.groupBy({
+              by: ["status"],
+              _count: { status: true },
+              where: { status: { in: ["disputed", "refuted", "unverified"] } },
+            }),
+            prisma.claim.findMany({
+              where: { status: { in: ["disputed", "refuted", "unverified"] } },
+              orderBy: [
+                { impactScore: { sort: "desc", nulls: "last" } },
+                { createdAt: "desc" },
+              ],
+              take: 3,
+              select: {
+                id: true,
+                text: true,
+                impactScore: true,
+                stock: { select: { ticker: true } },
+              },
+            }),
+          ]);
+          const byStatus = Object.fromEntries(
+            counts.map((c) => [c.status, c._count.status])
+          );
+          const digest = [
+            `📋 *Claims Review* — ⚔️ ${byStatus.disputed || 0} disputed · ❌ ${byStatus.refuted || 0} refuted · ⏳ ${byStatus.unverified || 0} unverified`,
+            ``,
+            ...(topClaims.length > 0
+              ? [
+                  `Top priority:`,
+                  ...topClaims.map(
+                    (c, i) =>
+                      `${i + 1}. $${c.stock.ticker} (impact ${c.impactScore ?? "?"}) — ${c.text.slice(0, 70)}`
+                  ),
+                  ``,
+                ]
+              : [`Nothing awaiting review 🎉`, ``]),
+            `Complete the research yourself on the Review page.`,
+          ].join("\n");
+          void sendMessage(digest).catch(() => {});
+          if (pendingRun) {
+            await prisma.pipelineRun.update({
+              where: { id: pendingRun.id },
+              data: {
+                status: "skipped",
+                completedAt: new Date(),
+                decision: "User requested review digest",
+              },
+            });
+          }
+          actions.push("Telegram: sent review digest");
+          workDone = true;
+          continue;
+        }
+
         if (parsed.claimIds.length > 0) {
           const depthLabel = parsed.depth === "deep" ? "deep" : "quick";
 
@@ -228,6 +286,60 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
     }
   }
 
+  // ── 1b. Expire triage runs awaiting Telegram replies ────────────────
+  // Every new-tweet prompt logs a triage run that only completes on a user
+  // reply. Unanswered ones must not pile up: after 6h, mark skipped and
+  // auto-enqueue deep research for the high-impact claims that were waiting
+  // on human review (low-impact ones are covered by the catch-up below).
+  // (Ops has a 48h backstop, but ops only runs when watchdog finds issues —
+  // this sweep runs every tick regardless.)
+  const TRIAGE_EXPIRY_MS = 6 * 60 * 60 * 1000;
+  const expiredTriage = await prisma.pipelineRun.findMany({
+    where: {
+      stage: "triage",
+      status: "started",
+      startedAt: { lte: new Date(Date.now() - TRIAGE_EXPIRY_MS) },
+    },
+    select: { id: true, output: true },
+  });
+  for (const run of expiredTriage) {
+    let pendingClaims: { index: number; claimId: number }[] = [];
+    try {
+      pendingClaims = JSON.parse(run.output || "{}").pendingClaims || [];
+    } catch {
+      /* ignore malformed output */
+    }
+    const ids = pendingClaims.map((c) => c.claimId).filter(Boolean);
+    if (ids.length > 0) {
+      const waiting = await prisma.claim.findMany({
+        where: { id: { in: ids }, researchStatus: { in: ["pending", "failed"] } },
+        select: { id: true, impactScore: true, stock: { select: { ticker: true } } },
+      });
+      for (const c of waiting) {
+        if ((c.impactScore ?? 0) >= 4 && c.stock?.ticker) {
+          await enqueueTask({
+            kind: "research",
+            claimId: c.id,
+            ticker: c.stock.ticker,
+            source: "scheduler",
+            depth: "deep",
+          });
+        }
+      }
+    }
+    await prisma.pipelineRun.update({
+      where: { id: run.id },
+      data: {
+        status: "skipped",
+        completedAt: new Date(),
+        decision:
+          "Triage expired (no reply in 6h) — auto-enqueued deep research for high-impact claims",
+      },
+    });
+    actions.push(`Triage expired: ${pendingClaims.length} claim(s) awaiting reply, auto-researched`);
+    workDone = true;
+  }
+
   // ── 2. Catch-up: enqueue pending work ───────────────────────────────
   if (!workDone) {
     // 2a. Research for pending claims (low-impact when Telegram configured;
@@ -255,19 +367,49 @@ export async function orchestratorTick(): Promise<OrchestratorTickResult> {
     }
 
     // 2b. Summarize for stale stocks with content.
+    //     Priority 1: stocks whose claims changed recently (human verdicts on
+    //     /review, re-research) — those must reach the AI memory promptly.
+    //     Without this, a stock summarized an hour ago queues behind 200+
+    //     older summaries (the 100-stock scan window + 3-per-tick cap) and the
+    //     verdict would take hours to propagate.
+    const SELECT_STOCK = {
+      ticker: true,
+      lastSummaryAt: true,
+      files: { select: { createdAt: true, markdown: true } },
+      notes: { select: { createdAt: true } },
+      claims: { select: { createdAt: true, updatedAt: true } },
+    } as const;
+
+    const recentCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentClaimStocks = await prisma.claim.findMany({
+      where: { updatedAt: { gte: recentCutoff } },
+      distinct: ["stockId"],
+      select: { stockId: true },
+      orderBy: { updatedAt: "desc" },
+      take: 30,
+    });
+    const recentIds = recentClaimStocks.map((c) => c.stockId);
+    const recentStocks =
+      recentIds.length > 0
+        ? await prisma.stock.findMany({
+            where: { id: { in: recentIds } },
+            select: SELECT_STOCK,
+          })
+        : [];
+
     const stocksToCheck = await prisma.stock.findMany({
-      select: {
-        ticker: true,
-        lastSummaryAt: true,
-        files: { select: { createdAt: true, markdown: true } },
-        notes: { select: { createdAt: true } },
-        claims: { select: { createdAt: true, updatedAt: true } },
-      },
+      select: SELECT_STOCK,
       orderBy: { lastSummaryAt: "asc" },
       take: 100,
     });
 
-    const stale = stocksToCheck.filter((s) => needsSummary(s));
+    // Recent-claim stocks first (deduped), then the long tail.
+    const seen = new Set<string>();
+    const stale = [...recentStocks, ...stocksToCheck].filter((s) => {
+      if (seen.has(s.ticker)) return false;
+      seen.add(s.ticker);
+      return needsSummary(s);
+    });
     const actionable = stale.filter(
       (s) =>
         s.claims.length > 0 ||

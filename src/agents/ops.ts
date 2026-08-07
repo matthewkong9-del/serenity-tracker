@@ -44,7 +44,9 @@ async function run(_input?: AgentInput): Promise<AgentResult> {
     fixes.push(`Cleared ${stuck.length} stuck pipeline runs`);
   }
 
-  // 2. Clear abandoned triage entries (48h timeout)
+  // 2. Backstop: clear abandoned triage entries (48h). Primary expiry is the
+  //    orchestrator's 6h sweep, which also auto-enqueues deep research — this
+  //    only catches stragglers when ops runs at all.
   const triageCutoff = new Date(now.getTime() - 48 * 60 * 60 * 1000);
   const abandonedTriage = await prisma.pipelineRun.findMany({
     where: {
